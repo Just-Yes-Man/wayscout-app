@@ -24,4 +24,9 @@ public class WeatherController {
     public DailyRemainingForecastResponse getRemainingForecastToday(@RequestParam String location) {
         return weatherService.getRemainingForecastToday(location);
     }
+
+    @GetMapping("/next24h")
+    public DailyRemainingForecastResponse getNext24HoursForecast(@RequestParam String location) {
+        return weatherService.getNext24HoursForecast(location);
+    }
 }
