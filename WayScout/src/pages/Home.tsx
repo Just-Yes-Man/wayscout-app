@@ -3,7 +3,9 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/ui/badge";
 import {
   getCurrentWeatherByCoordinates,
+  getNext24HoursWeatherByCoordinates,
   type CurrentWeather,
+  type HourlyForecast,
 } from "../services/weatherApi";
 import { getDeviceLocality } from "../services/locationApi";
 import {
@@ -90,6 +92,11 @@ export function Home() {
   const [deviceLocality, setDeviceLocality] = useState<string | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [showNext24Hours, setShowNext24Hours] = useState(false);
+  const [next24HoursLoading, setNext24HoursLoading] = useState(false);
+  const [next24HoursError, setNext24HoursError] = useState<string | null>(null);
+  const [next24Hours, setNext24Hours] = useState<HourlyForecast[]>([]);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -100,6 +107,11 @@ export function Home() {
 
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
+        setCoords({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+
         try {
           const [weather, locality] = await Promise.all([
             getCurrentWeatherByCoordinates(coords.latitude, coords.longitude),
@@ -190,6 +202,31 @@ export function Home() {
       ? mockEvents
       : mockEvents.filter((event) => event.type === filter);
 
+  const handleWeatherCardClick = async () => {
+    setShowNext24Hours((previous) => !previous);
+
+    if (next24Hours.length > 0 || next24HoursLoading || !coords) {
+      return;
+    }
+
+    setNext24HoursLoading(true);
+    setNext24HoursError(null);
+
+    try {
+      const forecast = await getNext24HoursWeatherByCoordinates(
+        coords.latitude,
+        coords.longitude,
+      );
+      setNext24Hours(forecast.remainingHourlyForecast);
+    } catch {
+      setNext24HoursError(
+        "No fue posible cargar el pronostico de las proximas 24 horas.",
+      );
+    } finally {
+      setNext24HoursLoading(false);
+    }
+  };
+
   return (
     <div className="pb-4">
       {/* Header - blanco limpio, el azul queda como acento */}
@@ -206,7 +243,11 @@ export function Home() {
         </div>
 
         {/* Tarjeta de clima - aquí sí usamos azul de marca con gradiente para darle profundidad */}
-        <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={handleWeatherCardClick}
+          className="w-full text-left bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl p-4 shadow-sm"
+        >
           {weatherLoading && (
             <div className="flex items-center gap-2 text-blue-50 text-sm">
               <LoaderCircle className="w-4 h-4 animate-spin" />
@@ -239,7 +280,42 @@ export function Home() {
               </div>
             </div>
           )}
-        </div>
+        </button>
+
+        {showNext24Hours && (
+          <div className="mt-3 rounded-2xl border border-slate-200 bg-white p-3">
+            <p className="text-sm text-slate-700 mb-2">
+              Pronóstico para las próximas 24 horas
+            </p>
+
+            {next24HoursLoading && (
+              <div className="flex items-center gap-2 text-slate-500 text-sm">
+                <LoaderCircle className="w-4 h-4 animate-spin" />
+                <span>Cargando pronóstico...</span>
+              </div>
+            )}
+
+            {!next24HoursLoading && next24HoursError && (
+              <p className="text-sm text-red-600">{next24HoursError}</p>
+            )}
+
+            {!next24HoursLoading && !next24HoursError && next24Hours.length > 0 && (
+              <div className="space-y-2 max-h-64 overflow-y-auto pr-1">
+                {next24Hours.map((hour) => (
+                  <div
+                    key={hour.time}
+                    className="flex items-center justify-between rounded-lg bg-slate-50 px-3 py-2 text-sm"
+                  >
+                    <span className="text-slate-600">{hour.time.slice(11, 16)}</span>
+                    <span className="text-slate-900">{Math.round(hour.temperatureC)}°</span>
+                    <span className="text-slate-500">{hour.chanceOfRain}% lluvia</span>
+                    <span className="text-slate-500">{hour.condition}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* Stats - neutros con acento de color en el icono */}
         <div className="grid grid-cols-3 gap-3 mt-4">
