@@ -1,9 +1,11 @@
 HELP.md
-WayScout/
 target/
 .mvn/wrapper/maven-wrapper.jar
 !**/src/main/**/target/
 !**/src/test/**/target/
+WayScout/node_modules/
+WayScout/dist/
+WayScout/dev-dist/
 
 ### STS ###
 .apt_generated
