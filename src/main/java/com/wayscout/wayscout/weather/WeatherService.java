@@ -33,7 +33,7 @@ public class WeatherService {
     }
 
     public CurrentWeatherResponse getCurrentWeather(String location) {
-        JsonNode json = requestForecast(location);
+        JsonNode json = requestForecast(location, 1);
 
         JsonNode locationNode = json.path("location");
         JsonNode currentNode = json.path("current");
@@ -52,7 +52,7 @@ public class WeatherService {
     }
 
     public DailyRemainingForecastResponse getRemainingForecastToday(String location) {
-        JsonNode json = requestForecast(location);
+        JsonNode json = requestForecast(location, 1);
 
         JsonNode locationNode = json.path("location");
         JsonNode forecastHourArray = json.path("forecast")
@@ -84,14 +84,48 @@ public class WeatherService {
         );
     }
 
-    private JsonNode requestForecast(String location) {
+    public DailyRemainingForecastResponse getNext24HoursForecast(String location) {
+        JsonNode json = requestForecast(location, 2);
+
+        JsonNode locationNode = json.path("location");
+        JsonNode forecastDaysArray = json.path("forecast").path("forecastday");
+
+        LocalDateTime localTime = LocalDateTime.parse(locationNode.path("localtime").asText(), WEATHER_API_DATE_TIME);
+        LocalDateTime endTime = localTime.plusHours(24);
+
+        List<HourlyForecast> next24Hours = new ArrayList<>();
+        for (JsonNode dayNode : forecastDaysArray) {
+            JsonNode forecastHourArray = dayNode.path("hour");
+            for (JsonNode hourNode : forecastHourArray) {
+                LocalDateTime forecastDateTime = LocalDateTime.parse(hourNode.path("time").asText(), WEATHER_API_DATE_TIME);
+                if (!forecastDateTime.isBefore(localTime) && forecastDateTime.isBefore(endTime)) {
+                    next24Hours.add(new HourlyForecast(
+                            hourNode.path("time").asText(),
+                            hourNode.path("temp_c").asDouble(),
+                            hourNode.path("chance_of_rain").asInt(),
+                            hourNode.path("condition").path("text").asText()
+                    ));
+                }
+            }
+        }
+
+        return new DailyRemainingForecastResponse(
+                locationNode.path("name").asText(),
+                locationNode.path("region").asText(),
+                locationNode.path("country").asText(),
+                locationNode.path("localtime").asText(),
+                next24Hours
+        );
+    }
+
+    private JsonNode requestForecast(String location, int days) {
         try {
             byte[] responseBytes = restClient.get()
                     .uri(uriBuilder -> uriBuilder
                             .path("/forecast.json")
                             .queryParam("key", apiKey)
                             .queryParam("q", location)
-                            .queryParam("days", 1)
+                            .queryParam("days", days)
                             .queryParam("aqi", "no")
                             .queryParam("alerts", "no")
                             .build())
