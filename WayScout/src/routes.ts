@@ -5,6 +5,7 @@ import { Home } from "./pages/Home";
 import { EventDetail } from "./pages/EventDetail";
 import { CreateReport } from "./pages/CreateReport";
 import { Settings } from "./pages/Settings";
+import { PlanTrip } from "./pages/PlanTrip";
 import { Layout } from "./components/Layout";
 
 export const router = createBrowserRouter([
@@ -23,6 +24,7 @@ export const router = createBrowserRouter([
       { index: true, Component: Home },
       { path: "event/:id", Component: EventDetail },
       { path: "create-report", Component: CreateReport },
+      { path: "plan-trip", Component: PlanTrip },
       { path: "settings", Component: Settings },
     ],
   },

@@ -1,5 +1,5 @@
 import { Outlet, useNavigate, useLocation } from "react-router-dom";
-import { Home, Settings, PlusCircle } from "lucide-react";
+import { Home, Settings, PlusCircle, Route } from "lucide-react";
 
 export function Layout() {
   const navigate = useNavigate();
@@ -16,10 +16,10 @@ export function Layout() {
 
       {/* Bottom navigation */}
       <nav className="border-t border-border bg-card shadow-lg">
-        <div className="flex justify-around items-center h-16 px-2">
+        <div className="grid grid-cols-4 items-center h-16 px-2">
           <button
             onClick={() => navigate("/")}
-            className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-2 rounded-lg transition-colors ${
               isActive("/")
                 ? "text-primary"
                 : "text-muted-foreground hover:text-foreground"
@@ -31,7 +31,7 @@ export function Layout() {
 
           <button
             onClick={() => navigate("/create-report")}
-            className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-2 rounded-lg transition-colors ${
               isActive("/create-report")
                 ? "text-primary"
                 : "text-muted-foreground hover:text-foreground"
@@ -41,9 +41,22 @@ export function Layout() {
             <span className="text-xs">Reportar</span>
           </button>
 
+
+          <button
+            onClick={() => navigate("/plan-trip")}
+            className={`flex flex-col items-center justify-center px-2 py-2 rounded-lg transition-colors ${
+              isActive("/plan-trip")
+                ? "text-primary"
+                : "text-muted-foreground hover:text-foreground"
+            }`}
+          >
+            <Route className="w-6 h-6 mb-1" />
+            <span className="text-xs">Viaje</span>
+          </button>
+
           <button
             onClick={() => navigate("/settings")}
-            className={`flex flex-col items-center justify-center px-4 py-2 rounded-lg transition-colors ${
+            className={`flex flex-col items-center justify-center px-2 py-2 rounded-lg transition-colors ${
               isActive("/settings")
                 ? "text-primary"
                 : "text-muted-foreground hover:text-foreground"
