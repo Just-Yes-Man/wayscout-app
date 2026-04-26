@@ -3,11 +3,14 @@ import { useNavigate } from "react-router-dom";
 import { Badge } from "../components/ui/badge";
 import {
   getCurrentWeatherByCoordinates,
+  getNext24HoursWeatherByCoordinates,
   type CurrentWeather,
+  type HourlyForecast,
 } from "../services/weatherApi";
 import { getDeviceLocality } from "../services/locationApi";
 import {
   Bell,
+  X,
   MapPin,
   ThumbsUp,
   ThumbsDown,
@@ -90,6 +93,11 @@ export function Home() {
   const [deviceLocality, setDeviceLocality] = useState<string | null>(null);
   const [weatherLoading, setWeatherLoading] = useState(true);
   const [weatherError, setWeatherError] = useState<string | null>(null);
+  const [coords, setCoords] = useState<{ latitude: number; longitude: number } | null>(null);
+  const [isForecastModalOpen, setIsForecastModalOpen] = useState(false);
+  const [next24HoursLoading, setNext24HoursLoading] = useState(false);
+  const [next24HoursError, setNext24HoursError] = useState<string | null>(null);
+  const [next24Hours, setNext24Hours] = useState<HourlyForecast[]>([]);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -100,6 +108,11 @@ export function Home() {
 
     navigator.geolocation.getCurrentPosition(
       async ({ coords }) => {
+        setCoords({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
+
         try {
           const [weather, locality] = await Promise.all([
             getCurrentWeatherByCoordinates(coords.latitude, coords.longitude),
@@ -190,6 +203,32 @@ export function Home() {
       ? mockEvents
       : mockEvents.filter((event) => event.type === filter);
 
+  const loadNext24HoursForecast = async () => {
+    if (next24Hours.length > 0 || next24HoursLoading || !coords) return;
+
+    setNext24HoursLoading(true);
+    setNext24HoursError(null);
+
+    try {
+      const forecast = await getNext24HoursWeatherByCoordinates(
+        coords.latitude,
+        coords.longitude,
+      );
+      setNext24Hours(forecast.remainingHourlyForecast);
+    } catch {
+      setNext24HoursError(
+        "No fue posible cargar el pronostico de las proximas 24 horas.",
+      );
+    } finally {
+      setNext24HoursLoading(false);
+    }
+  };
+
+  const handleWeatherCardClick = async () => {
+    setIsForecastModalOpen(true);
+    await loadNext24HoursForecast();
+  };
+
   return (
     <div className="pb-4">
       {/* Header - blanco limpio, el azul queda como acento */}
@@ -206,7 +245,11 @@ export function Home() {
         </div>
 
         {/* Tarjeta de clima - aquí sí usamos azul de marca con gradiente para darle profundidad */}
-        <div className="bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl p-4 shadow-sm">
+        <button
+          type="button"
+          onClick={handleWeatherCardClick}
+          className="w-full text-left bg-gradient-to-br from-blue-600 to-blue-700 text-white rounded-2xl p-4 shadow-sm"
+        >
           {weatherLoading && (
             <div className="flex items-center gap-2 text-blue-50 text-sm">
               <LoaderCircle className="w-4 h-4 animate-spin" />
@@ -239,7 +282,7 @@ export function Home() {
               </div>
             </div>
           )}
-        </div>
+        </button>
 
         {/* Stats - neutros con acento de color en el icono */}
         <div className="grid grid-cols-3 gap-3 mt-4">
@@ -367,6 +410,58 @@ export function Home() {
           </div>
         ))}
       </div>
+
+      {isForecastModalOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px] flex items-end sm:items-center sm:justify-center">
+          <div className="w-full sm:max-w-lg bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between px-5 pt-4 pb-3 border-b border-slate-100">
+              <div>
+                <p className="text-sm text-slate-500">Clima detallado</p>
+                <h2 className="text-lg text-slate-900">Próximas 24 horas</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsForecastModalOpen(false)}
+                className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                aria-label="Cerrar pronóstico"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="p-4 overflow-y-auto">
+              {next24HoursLoading && (
+                <div className="flex items-center gap-2 text-slate-500 text-sm">
+                  <LoaderCircle className="w-4 h-4 animate-spin" />
+                  <span>Cargando pronóstico...</span>
+                </div>
+              )}
+
+              {!next24HoursLoading && next24HoursError && (
+                <p className="text-sm text-red-600">{next24HoursError}</p>
+              )}
+
+              {!next24HoursLoading && !next24HoursError && next24Hours.length > 0 && (
+                <div className="space-y-2">
+                  {next24Hours.map((hour) => (
+                    <div
+                      key={hour.time}
+                      className="grid grid-cols-[56px_56px_1fr] items-center gap-2 rounded-xl border border-slate-100 bg-slate-50 px-3 py-2"
+                    >
+                      <span className="text-sm text-slate-600">{hour.time.slice(11, 16)}</span>
+                      <span className="text-base text-slate-900">{Math.round(hour.temperatureC)}°</span>
+                      <div className="text-right">
+                        <p className="text-sm text-slate-700 truncate">{hour.condition}</p>
+                        <p className="text-xs text-slate-500">{hour.chanceOfRain}% lluvia</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

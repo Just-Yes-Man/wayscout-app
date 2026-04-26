@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
+import { getDeviceLocality } from "../services/locationApi";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
 import {
   AlertTriangle,
   Car,
@@ -11,9 +14,13 @@ import {
   MapPin,
   Camera,
   CheckCircle,
+  LoaderCircle,
+  X,
 } from "lucide-react";
 
 type EventType = "deslave" | "trafico" | "clima" | null;
+type LatLng = [number, number];
+const MAP_ZOOM = 15;
 
 export function CreateReport() {
   const navigate = useNavigate();
@@ -21,6 +28,14 @@ export function CreateReport() {
   const [location, setLocation] = useState("");
   const [description, setDescription] = useState("");
   const [submitted, setSubmitted] = useState(false);
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
+  const [selectedCoordinates, setSelectedCoordinates] = useState<LatLng | null>(null);
+  const [mapCenter, setMapCenter] = useState<LatLng>([14.6349, -90.5069]);
+  const [isLocating, setIsLocating] = useState(false);
+  const [mapError, setMapError] = useState<string | null>(null);
+  const mapContainerRef = useRef<HTMLDivElement | null>(null);
+  const mapInstanceRef = useRef<L.Map | null>(null);
+  const markerRef = useRef<L.Marker | null>(null);
 
   const handleSubmit = (e: React.FormEvent) => {
     e.preventDefault();
@@ -29,6 +44,92 @@ export function CreateReport() {
       navigate("/");
     }, 2000);
   };
+
+  const openMapPicker = () => {
+    setMapError(null);
+    setIsMapPickerOpen(true);
+    setIsLocating(true);
+
+    if (!navigator.geolocation) {
+      setMapError("Tu dispositivo no soporta geolocalización.");
+      setIsLocating(false);
+      return;
+    }
+
+    navigator.geolocation.getCurrentPosition(
+      ({ coords }) => {
+        const currentPosition: LatLng = [coords.latitude, coords.longitude];
+        setMapCenter(currentPosition);
+        setSelectedCoordinates(currentPosition);
+        setIsLocating(false);
+      },
+      () => {
+        setMapError("No fue posible obtener tu ubicación actual.");
+        setIsLocating(false);
+      },
+      { enableHighAccuracy: true, timeout: 10000 },
+    );
+  };
+
+  const applySelectedLocation = async () => {
+    if (!selectedCoordinates) {
+      setMapError("Selecciona un punto en el mapa para continuar.");
+      return;
+    }
+
+    const [latitude, longitude] = selectedCoordinates;
+    const locality = await getDeviceLocality(latitude, longitude);
+    const fallbackCoordinates = `${latitude.toFixed(5)}, ${longitude.toFixed(5)}`;
+
+    setLocation(locality ?? fallbackCoordinates);
+    setMapError(null);
+    setIsMapPickerOpen(false);
+  };
+
+  useEffect(() => {
+    if (!isMapPickerOpen || !mapContainerRef.current || mapInstanceRef.current) return;
+
+    const map = L.map(mapContainerRef.current, {
+      zoomControl: true,
+      attributionControl: true,
+    }).setView(mapCenter, MAP_ZOOM);
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      attribution: "&copy; OpenStreetMap contributors",
+      maxZoom: 19,
+    }).addTo(map);
+
+    map.on("click", (event: L.LeafletMouseEvent) => {
+      setSelectedCoordinates([event.latlng.lat, event.latlng.lng]);
+      setMapError(null);
+    });
+
+    mapInstanceRef.current = map;
+
+    return () => {
+      map.remove();
+      mapInstanceRef.current = null;
+      markerRef.current = null;
+    };
+  }, [isMapPickerOpen, mapCenter]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !isMapPickerOpen) return;
+
+    map.setView(mapCenter, MAP_ZOOM);
+  }, [mapCenter, isMapPickerOpen]);
+
+  useEffect(() => {
+    const map = mapInstanceRef.current;
+    if (!map || !selectedCoordinates || !isMapPickerOpen) return;
+
+    if (!markerRef.current) {
+      markerRef.current = L.marker(selectedCoordinates).addTo(map);
+    } else {
+      markerRef.current.setLatLng(selectedCoordinates);
+    }
+  }, [selectedCoordinates, isMapPickerOpen]);
 
   if (submitted) {
     return (
@@ -135,10 +236,11 @@ export function CreateReport() {
           </div>
           <button
             type="button"
+            onClick={openMapPicker}
             className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
           >
             <MapPin className="w-4 h-4" />
-            Usar mi ubicación actual
+            Elegir en el mapa
           </button>
         </div>
 
@@ -215,6 +317,68 @@ export function CreateReport() {
           Al enviar este reporte confirmas que la información es verídica
         </p>
       </form>
+
+      {isMapPickerOpen && (
+        <div className="fixed inset-0 z-50 bg-slate-950/45 backdrop-blur-[1px] flex items-end sm:items-center sm:justify-center">
+          <div className="w-full sm:max-w-2xl bg-white rounded-t-3xl sm:rounded-2xl shadow-2xl overflow-hidden">
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-100">
+              <div>
+                <p className="text-sm text-slate-500">Ubicación del incidente</p>
+                <h2 className="text-lg text-slate-900">Selecciona un punto en el mapa</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsMapPickerOpen(false)}
+                className="rounded-full p-2 text-slate-500 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+                aria-label="Cerrar selector de mapa"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <div className="px-5 pt-4">
+              {isLocating && (
+                <div className="mb-3 flex items-center gap-2 text-sm text-slate-600">
+                  <LoaderCircle className="w-4 h-4 animate-spin" />
+                  <span>Detectando tu ubicación actual...</span>
+                </div>
+              )}
+              {mapError && <p className="mb-3 text-sm text-red-600">{mapError}</p>}
+            </div>
+
+            <div className="px-5">
+              <div
+                ref={mapContainerRef}
+                className="w-full h-72 sm:h-80 rounded-xl overflow-hidden border border-slate-200"
+              />
+              {selectedCoordinates && (
+                <p className="mt-2 text-xs text-slate-500">
+                  Coordenadas seleccionadas: {selectedCoordinates[0].toFixed(5)},{" "}
+                  {selectedCoordinates[1].toFixed(5)}
+                </p>
+              )}
+            </div>
+
+            <div className="p-5 border-t border-slate-100 mt-4 flex flex-col sm:flex-row gap-2 sm:justify-end">
+              <Button
+                type="button"
+                variant="outline"
+                className="w-full sm:w-auto"
+                onClick={() => setIsMapPickerOpen(false)}
+              >
+                Cancelar
+              </Button>
+              <Button
+                type="button"
+                className="w-full sm:w-auto bg-blue-600 hover:bg-blue-700 text-white"
+                onClick={applySelectedLocation}
+              >
+                Usar esta ubicación
+              </Button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
