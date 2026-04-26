@@ -18,7 +18,7 @@ import {
 
 type EventType = "deslave" | "trafico" | "clima" | null;
 type LatLng = [number, number];
-const MAP_WIDTH = 720;
+const MAP_WIDTH = 650;
 const MAP_HEIGHT = 360;
 const MAP_ZOOM = 15;
 
@@ -122,7 +122,7 @@ export function CreateReport() {
   };
 
   const mapMarker = selectedCoordinates ?? mapCenter;
-  const mapImageSrc = `https://staticmap.openstreetmap.de/staticmap.php?center=${mapCenter[0]},${mapCenter[1]}&zoom=${MAP_ZOOM}&size=${MAP_WIDTH}x${MAP_HEIGHT}&markers=${mapMarker[0]},${mapMarker[1]},red-pushpin`;
+  const mapImageSrc = `https://static-maps.yandex.ru/1.x/?lang=es_ES&ll=${mapCenter[1]},${mapCenter[0]}&z=${MAP_ZOOM}&size=${MAP_WIDTH},${MAP_HEIGHT}&l=map&pt=${mapMarker[1]},${mapMarker[0]},pm2rdm`;
 
   if (submitted) {
     return (
@@ -348,6 +348,11 @@ export function CreateReport() {
                 <img
                   src={mapImageSrc}
                   alt="Mapa para seleccionar ubicación"
+                  onError={() => {
+                    setMapError((currentError) =>
+                      currentError ?? "No se pudo cargar el mapa. Verifica tu conexion a internet.",
+                    );
+                  }}
                   className="w-full h-72 sm:h-80 object-cover"
                 />
                 <div className="absolute left-3 top-3 rounded-lg bg-black/60 text-white text-xs px-2 py-1">
