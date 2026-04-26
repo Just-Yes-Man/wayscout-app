@@ -1,10 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
+import { MapContainer, TileLayer, useMap, useMapEvents } from "react-leaflet";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
 import { getDeviceLocality } from "../services/locationApi";
+import "leaflet/dist/leaflet.css";
 import {
   AlertTriangle,
   Car,
@@ -18,26 +20,41 @@ import {
 
 type EventType = "deslave" | "trafico" | "clima" | null;
 type LatLng = [number, number];
-const MAP_WIDTH = 650;
-const MAP_HEIGHT = 360;
+const DEFAULT_MAP_CENTER: LatLng = [14.6349, -90.5069];
 const MAP_ZOOM = 15;
 
-function latLngToPixel([latitude, longitude]: LatLng, zoom: number) {
-  const sinLatitude = Math.sin((latitude * Math.PI) / 180);
-  const worldSize = 256 * 2 ** zoom;
-  const x = ((longitude + 180) / 360) * worldSize;
-  const y =
-    (0.5 - Math.log((1 + sinLatitude) / (1 - sinLatitude)) / (4 * Math.PI)) *
-    worldSize;
-  return { x, y };
+type MapCenterSyncProps = {
+  center: LatLng;
+};
+
+type MapMoveHandlerProps = {
+  onMoveEnd: (coordinates: LatLng) => void;
+};
+
+function MapCenterSync({ center }: MapCenterSyncProps) {
+  const map = useMap();
+
+  useEffect(() => {
+    map.setView(center, map.getZoom(), { animate: true });
+  }, [center, map]);
+
+  return null;
 }
 
-function pixelToLatLng(x: number, y: number, zoom: number): LatLng {
-  const worldSize = 256 * 2 ** zoom;
-  const longitude = (x / worldSize) * 360 - 180;
-  const n = Math.PI - (2 * Math.PI * y) / worldSize;
-  const latitude = (180 / Math.PI) * Math.atan(0.5 * (Math.exp(n) - Math.exp(-n)));
-  return [latitude, longitude];
+function MapMoveHandler({ onMoveEnd }: MapMoveHandlerProps) {
+  const map = useMapEvents({
+    moveend: () => {
+      const center = map.getCenter();
+      onMoveEnd([center.lat, center.lng]);
+    },
+  });
+
+  useEffect(() => {
+    const center = map.getCenter();
+    onMoveEnd([center.lat, center.lng]);
+  }, [map, onMoveEnd]);
+
+  return null;
 }
 
 export function CreateReport() {
@@ -48,7 +65,7 @@ export function CreateReport() {
   const [submitted, setSubmitted] = useState(false);
   const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
   const [selectedCoordinates, setSelectedCoordinates] = useState<LatLng | null>(null);
-  const [mapCenter, setMapCenter] = useState<LatLng>([14.6349, -90.5069]);
+  const [mapCenter, setMapCenter] = useState<LatLng>(DEFAULT_MAP_CENTER);
   const [isLocating, setIsLocating] = useState(false);
   const [mapError, setMapError] = useState<string | null>(null);
 
@@ -62,6 +79,7 @@ export function CreateReport() {
 
   const openMapPicker = () => {
     setMapError(null);
+    setMapCenter(selectedCoordinates ?? DEFAULT_MAP_CENTER);
     setIsMapPickerOpen(true);
     setIsLocating(true);
 
@@ -101,28 +119,10 @@ export function CreateReport() {
     setIsMapPickerOpen(false);
   };
 
-  const handleMapClick = (event: React.MouseEvent<HTMLButtonElement>) => {
-    const bounds = event.currentTarget.getBoundingClientRect();
-    const clickX = event.clientX - bounds.left;
-    const clickY = event.clientY - bounds.top;
-
-    const scaleX = MAP_WIDTH / bounds.width;
-    const scaleY = MAP_HEIGHT / bounds.height;
-
-    const mapClickX = clickX * scaleX;
-    const mapClickY = clickY * scaleY;
-
-    const centerPixel = latLngToPixel(mapCenter, MAP_ZOOM);
-    const targetPixelX = centerPixel.x + (mapClickX - MAP_WIDTH / 2);
-    const targetPixelY = centerPixel.y + (mapClickY - MAP_HEIGHT / 2);
-    const coordinates = pixelToLatLng(targetPixelX, targetPixelY, MAP_ZOOM);
-
+  const handleMapMoveEnd = (coordinates: LatLng) => {
     setSelectedCoordinates(coordinates);
     setMapError(null);
   };
-
-  const mapMarker = selectedCoordinates ?? mapCenter;
-  const mapImageSrc = `https://static-maps.yandex.ru/1.x/?lang=es_ES&ll=${mapCenter[1]},${mapCenter[0]}&z=${MAP_ZOOM}&size=${MAP_WIDTH},${MAP_HEIGHT}&l=map&pt=${mapMarker[1]},${mapMarker[0]},pm2rdm`;
 
   if (submitted) {
     return (
@@ -340,25 +340,31 @@ export function CreateReport() {
             </div>
 
             <div className="px-5">
-              <button
-                type="button"
-                onClick={handleMapClick}
-                className="relative block w-full rounded-xl overflow-hidden border border-slate-200 focus:outline-none focus:ring-2 focus:ring-blue-500"
-              >
-                <img
-                  src={mapImageSrc}
-                  alt="Mapa para seleccionar ubicación"
-                  onError={() => {
-                    setMapError((currentError) =>
-                      currentError ?? "No se pudo cargar el mapa. Verifica tu conexion a internet.",
-                    );
-                  }}
-                  className="w-full h-72 sm:h-80 object-cover"
-                />
-                <div className="absolute left-3 top-3 rounded-lg bg-black/60 text-white text-xs px-2 py-1">
-                  Toca el mapa para fijar ubicación
+              <div className="relative rounded-xl overflow-hidden border border-slate-200">
+                <MapContainer
+                  center={mapCenter}
+                  zoom={MAP_ZOOM}
+                  className="w-full h-72 sm:h-80"
+                  scrollWheelZoom
+                >
+                  <TileLayer
+                    url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+                    attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+                  />
+                  <MapCenterSync center={mapCenter} />
+                  <MapMoveHandler onMoveEnd={handleMapMoveEnd} />
+                </MapContainer>
+                <div className="pointer-events-none absolute inset-x-0 top-2 flex justify-center">
+                  <span className="rounded-lg bg-black/60 text-white text-xs px-2 py-1">
+                    Arrastra el mapa para ubicar el pin
+                  </span>
                 </div>
-              </button>
+                <div className="pointer-events-none absolute inset-0 flex items-center justify-center">
+                  <div className="-translate-y-4 text-red-600 drop-shadow-md">
+                    <MapPin className="w-8 h-8" />
+                  </div>
+                </div>
+              </div>
               {selectedCoordinates && (
                 <p className="mt-2 text-xs text-slate-500">
                   Coordenadas seleccionadas: {selectedCoordinates[0].toFixed(5)},{" "}
