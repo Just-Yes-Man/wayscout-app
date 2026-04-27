@@ -4,7 +4,23 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
-import { CheckCircle, MapPin, Route, Bus, Car, Bike, Footprints } from "lucide-react";
+import { geocodeLocation } from "../services/locationApi";
+import {
+  getCurrentWeatherByCoordinates,
+  type CurrentWeather,
+} from "../services/weatherApi";
+import {
+  CheckCircle,
+  MapPin,
+  Route,
+  Bus,
+  Car,
+  Bike,
+  Footprints,
+  LoaderCircle,
+  CloudSun,
+  AlertCircle,
+} from "lucide-react";
 
 const transportOptions = [
   { id: "carro", label: "Carro", icon: Car },
@@ -20,6 +36,10 @@ export function PlanTrip() {
   const [travelDate, setTravelDate] = useState("");
   const [notes, setNotes] = useState("");
   const [selectedTransport, setSelectedTransport] = useState<string[]>(["carro"]);
+  const [weatherPreview, setWeatherPreview] = useState<CurrentWeather | null>(null);
+  const [weatherLocationLabel, setWeatherLocationLabel] = useState<string | null>(null);
+  const [isWeatherLoading, setIsWeatherLoading] = useState(false);
+  const [weatherError, setWeatherError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
 
   const toggleTransport = (transport: string) => {
@@ -28,6 +48,44 @@ export function PlanTrip() {
         ? current.filter((item) => item !== transport)
         : [...current, transport],
     );
+  };
+
+  const checkDestinationWeather = async () => {
+    if (!destination.trim()) {
+      setWeatherPreview(null);
+      setWeatherLocationLabel(null);
+      setWeatherError("Ingresa un destino para consultar el clima.");
+      return;
+    }
+
+    setIsWeatherLoading(true);
+    setWeatherError(null);
+
+    try {
+      const geocodedLocation = await geocodeLocation(destination);
+
+      if (!geocodedLocation) {
+        setWeatherPreview(null);
+        setWeatherLocationLabel(null);
+        setWeatherError("No encontramos la ubicación. Prueba con un destino más específico.");
+        return;
+      }
+
+      const weather = await getCurrentWeatherByCoordinates(
+        geocodedLocation.latitude,
+        geocodedLocation.longitude,
+      );
+
+      setWeatherPreview(weather);
+      setWeatherLocationLabel(geocodedLocation.label);
+      setWeatherError(null);
+    } catch {
+      setWeatherPreview(null);
+      setWeatherLocationLabel(null);
+      setWeatherError("No fue posible obtener el clima en este momento.");
+    } finally {
+      setIsWeatherLoading(false);
+    }
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -48,7 +106,7 @@ export function PlanTrip() {
             <CheckCircle className="w-12 h-12 text-blue-600" />
           </div>
           <h2 className="text-2xl text-slate-900 mb-2">¡Viaje planeado!</h2>
-          <p className="text-slate-600">Tu ruta fue guardada correctamente.</p>
+          <p className="text-slate-600">Tu ruta fue procesada correctamente.</p>
         </div>
       </div>
     );
@@ -82,7 +140,7 @@ export function PlanTrip() {
           </div>
         </div>
 
-        <div className="space-y-2 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
+        <div className="space-y-3 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
           <Label htmlFor="destination" className="text-slate-900">
             Objetivo / destino *
           </Label>
@@ -98,6 +156,55 @@ export function PlanTrip() {
               required
             />
           </div>
+
+          <Button
+            type="button"
+            variant="outline"
+            className="w-full border-blue-200 text-blue-700 hover:bg-blue-50"
+            onClick={checkDestinationWeather}
+            disabled={isWeatherLoading}
+          >
+            {isWeatherLoading ? (
+              <>
+                <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+                Consultando clima...
+              </>
+            ) : (
+              <>
+                <CloudSun className="w-4 h-4 mr-2" />
+                Ver posible clima del destino
+              </>
+            )}
+          </Button>
+
+          {(weatherError || weatherPreview) && (
+            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
+              {weatherError && (
+                <div className="flex items-start gap-2 text-sm text-amber-700">
+                  <AlertCircle className="w-4 h-4 mt-0.5" />
+                  <span>{weatherError}</span>
+                </div>
+              )}
+
+              {weatherPreview && (
+                <div className="space-y-1.5 text-sm text-slate-700">
+                  <p className="text-slate-900">
+                    Clima estimado en <strong>{weatherLocationLabel ?? weatherPreview.city}</strong>
+                  </p>
+                  <p>
+                    {weatherPreview.condition} · {Math.round(weatherPreview.temperatureC)}°C
+                  </p>
+                  <p className="text-xs text-slate-500">
+                    Sensación {Math.round(weatherPreview.feelsLikeC)}° · Humedad {weatherPreview.humidity}%
+                    · Viento {Math.round(weatherPreview.windKph)} km/h
+                  </p>
+                  <p className="text-xs text-blue-700">
+                    Este aviso es informativo para planificar tu viaje, sin guardar todavía en base de datos.
+                  </p>
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         <div className="space-y-2 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
