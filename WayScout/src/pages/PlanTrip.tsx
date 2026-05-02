@@ -4,6 +4,7 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { Textarea } from "../components/ui/textarea";
+import { MapLocationPickerDialog } from "../components/MapLocationPickerDialog";
 import { geocodeLocation } from "../services/locationApi";
 import {
   getCurrentWeatherByCoordinates,
@@ -21,6 +22,8 @@ import {
   CloudSun,
   AlertCircle,
 } from "lucide-react";
+
+type LatLng = [number, number];
 
 const transportOptions = [
   { id: "carro", label: "Carro", icon: Car },
@@ -41,6 +44,10 @@ export function PlanTrip() {
   const [isWeatherLoading, setIsWeatherLoading] = useState(false);
   const [weatherError, setWeatherError] = useState<string | null>(null);
   const [submitted, setSubmitted] = useState(false);
+  const [isMapPickerOpen, setIsMapPickerOpen] = useState(false);
+  const [mapTarget, setMapTarget] = useState<"origin" | "destination" | null>(null);
+  const [originCoordinates, setOriginCoordinates] = useState<LatLng | null>(null);
+  const [destinationCoordinates, setDestinationCoordinates] = useState<LatLng | null>(null);
 
   const toggleTransport = (transport: string) => {
     setSelectedTransport((current) =>
@@ -86,6 +93,11 @@ export function PlanTrip() {
     } finally {
       setIsWeatherLoading(false);
     }
+  };
+
+  const openMapPicker = (target: "origin" | "destination") => {
+    setMapTarget(target);
+    setIsMapPickerOpen(true);
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -138,6 +150,14 @@ export function PlanTrip() {
               required
             />
           </div>
+          <button
+            type="button"
+            onClick={() => openMapPicker("origin")}
+            className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+          >
+            <MapPin className="w-4 h-4" />
+            Elegir en el mapa
+          </button>
         </div>
 
         <div className="space-y-3 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
@@ -156,6 +176,14 @@ export function PlanTrip() {
               required
             />
           </div>
+          <button
+            type="button"
+            onClick={() => openMapPicker("destination")}
+            className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
+          >
+            <MapPin className="w-4 h-4" />
+            Elegir en el mapa
+          </button>
 
           <Button
             type="button"
@@ -269,6 +297,35 @@ export function PlanTrip() {
           Guardar plan de viaje
         </Button>
       </form>
+
+      <MapLocationPickerDialog
+        isOpen={isMapPickerOpen}
+        title={
+          mapTarget === "origin"
+            ? "Selecciona tu punto de salida"
+            : "Selecciona tu destino"
+        }
+        subtitle={
+          mapTarget === "origin" ? "Ubicación de salida" : "Ubicación del destino"
+        }
+        initialCoordinates={
+          mapTarget === "origin" ? originCoordinates : destinationCoordinates
+        }
+        onClose={() => {
+          setIsMapPickerOpen(false);
+          setMapTarget(null);
+        }}
+        onApply={({ label, coordinates }) => {
+          if (mapTarget === "origin") {
+            setOrigin(label);
+            setOriginCoordinates(coordinates);
+            return;
+          }
+
+          setDestination(label);
+          setDestinationCoordinates(coordinates);
+        }}
+      />
     </div>
   );
 }
