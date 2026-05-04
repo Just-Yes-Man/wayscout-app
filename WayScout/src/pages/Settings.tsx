@@ -2,6 +2,7 @@ import { useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { Switch } from "../components/ui/switch";
 import { Button } from "../components/ui/button";
+import { useAuth } from "../context/AuthContext";
 import {
   User,
   Bell,
@@ -17,6 +18,7 @@ import {
 
 export function Settings() {
   const navigate = useNavigate();
+  const { user, logout } = useAuth();
   const [notifications, setNotifications] = useState({
     all: true,
     deslave: true,
@@ -26,7 +28,8 @@ export function Settings() {
     verified: true,
   });
 
-  const handleLogout = () => {
+  const handleLogout = async () => {
+    await logout();
     navigate("/login");
   };
 
@@ -54,8 +57,8 @@ export function Settings() {
                 <User className="w-6 h-6 text-white" />
               </div>
               <div className="text-left">
-                <p className="text-slate-900">Juan Pérez</p>
-                <p className="text-sm text-slate-600">juan@email.com</p>
+                <p className="text-slate-900">{user?.name ?? "Usuario"}</p>
+                <p className="text-sm text-slate-600">{user?.email ?? ""}</p>
               </div>
             </div>
             <ChevronRight className="w-5 h-5 text-slate-400" />
@@ -127,6 +130,7 @@ export function Settings() {
             </div>
           </div>
         </div>
+
 
         {/* Location Preferences */}
         <div className="bg-white rounded-xl shadow-sm overflow-hidden border border-slate-100">

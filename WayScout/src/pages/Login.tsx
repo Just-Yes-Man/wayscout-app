@@ -1,19 +1,75 @@
 import { useState } from "react";
-import { useNavigate } from "react-router-dom";
+import { useLocation, useNavigate } from "react-router-dom";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { MapPin, AlertTriangle } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
+import { sendPasswordResetEmail } from "firebase/auth";
+import { auth } from "../lib/firebase";
 
 export function Login() {
   const navigate = useNavigate();
+  const location = useLocation();
+  const { login } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [isResetting, setIsResetting] = useState(false);
 
-  const handleLogin = (e: React.FormEvent) => {
+  const getLoginErrorMessage = (error: unknown) => {
+    if (error && typeof error === "object" && "code" in error) {
+      switch ((error as { code: string }).code) {
+        case "auth/invalid-credential":
+          return "Credenciales incorrectas. Revisa tu correo y contraseña.";
+        case "auth/user-not-found":
+          return "No encontramos una cuenta con ese correo.";
+        case "auth/invalid-email":
+          return "El correo no tiene un formato valido.";
+        case "auth/too-many-requests":
+          return "Demasiados intentos. Intentalo mas tarde.";
+        default:
+          return "No fue posible iniciar sesion. Intenta de nuevo.";
+      }
+    }
+    return "No fue posible iniciar sesion. Intenta de nuevo.";
+  };
+
+  const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulación de login - en producción conectaría con backend
-    navigate("/");
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      await login(email, password);
+      const destination =
+        (location.state as { from?: string } | null)?.from ?? "/";
+      navigate(destination, { replace: true });
+    } catch (error) {
+      setErrorMessage(getLoginErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
+    }
+  };
+
+  const handlePasswordReset = async () => {
+    if (!email.trim()) {
+      setErrorMessage("Ingresa tu correo para recuperar la contrasena.");
+      return;
+    }
+
+    setIsResetting(true);
+    setErrorMessage(null);
+
+    try {
+      await sendPasswordResetEmail(auth, email.trim());
+      setErrorMessage("Te enviamos un correo para restablecer la contrasena.");
+    } catch (error) {
+      setErrorMessage(getLoginErrorMessage(error));
+    } finally {
+      setIsResetting(false);
+    }
   };
 
   return (
@@ -35,6 +91,18 @@ export function Login() {
           onSubmit={handleLogin}
           className="space-y-5 bg-white border border-slate-100 rounded-2xl p-5 shadow-sm"
         >
+          <div className="text-center">
+            <h2 className="text-xl text-slate-900">Bienvenido de vuelta</h2>
+            <p className="text-sm text-slate-500">
+              Ingresa con tu correo para continuar
+            </p>
+          </div>
+
+          {errorMessage ? (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {errorMessage}
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="email" className="text-slate-700">
               Correo electrónico
@@ -68,8 +136,9 @@ export function Login() {
           <Button
             type="submit"
             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6"
+            disabled={isSubmitting}
           >
-            Iniciar Sesión
+            {isSubmitting ? "Ingresando..." : "Iniciar Sesión"}
           </Button>
         </form>
 
@@ -84,6 +153,13 @@ export function Login() {
               Regístrate aquí
             </button>
           </p>
+          <button
+            onClick={handlePasswordReset}
+            className="mt-3 text-sm text-slate-500 hover:text-slate-700"
+            disabled={isResetting}
+          >
+            {isResetting ? "Enviando correo..." : "¿Olvidaste tu contraseña?"}
+          </button>
         </div>
 
         {/* Info */}
