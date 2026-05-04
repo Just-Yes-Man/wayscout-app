@@ -14,6 +14,8 @@ export interface HourlyForecast {
   time: string;
   temperatureC: number;
   chanceOfRain: number;
+  willItRain: number;
+  precipMm: number;
   condition: string;
 }
 
