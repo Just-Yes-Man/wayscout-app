@@ -13,6 +13,7 @@ import {
   type HourlyForecast,
   type Next24HoursWeather,
 } from "../services/weatherApi";
+import { getRouteTraffic, type TrafficRoute } from "../services/trafficApi";
 import {
   CheckCircle,
   MapPin,
@@ -40,6 +41,8 @@ type SavedTrip = {
   weather: CurrentWeather | null;
   weatherLocationLabel: string | null;
   weatherWarnings: string[];
+  trafficWarnings?: string[];
+  trafficByTransport?: Record<string, TrafficRoute>;
   forecastSnapshot: Next24HoursWeather | null;
 };
 
@@ -124,6 +127,13 @@ const transportOptions = [
   { id: "moto", label: "Moto", icon: Bike },
   { id: "caminando", label: "Caminando", icon: Footprints },
 ] as const;
+
+const transportToTomTomMode: Record<string, string> = {
+  carro: "car",
+  bus: "bus",
+  moto: "motorcycle",
+  caminando: "pedestrian",
+};
 
 export function PlanTrip() {
   const navigate = useNavigate();
@@ -270,6 +280,37 @@ export function PlanTrip() {
       : ["Sin alertas relevantes en el clima actual. No se pudo cargar el pronóstico horario para mayor precisión."];
   };
 
+  const buildTrafficWarnings = (
+    trafficByTransport: Record<string, TrafficRoute>,
+    selectedModes: string[],
+    fallbackMessage?: string,
+  ): string[] => {
+    const warnings: string[] = [];
+
+    for (const mode of selectedModes) {
+      const traffic = trafficByTransport[mode];
+      if (!traffic) continue;
+
+      const modeLabel = transportOptions.find((item) => item.id === mode)?.label ?? mode;
+      const distanceKm = (traffic.routeLengthMeters / 1000).toFixed(1);
+      const totalMinutes = Math.round(traffic.travelTimeWithTrafficSeconds / 60);
+
+      warnings.push(
+        `${modeLabel}: ${traffic.advisory} Distancia estimada ${distanceKm} km.`,
+      );
+
+      if (traffic.trafficLevel === "high") {
+        warnings.push(
+          `${modeLabel}: alto impacto de trafico detectado para esta ruta (${totalMinutes} min aprox.).`,
+        );
+      }
+    }
+
+    if (warnings.length > 0) return warnings;
+
+    return [fallbackMessage ?? "No se pudo estimar el trafico de la ruta con los datos actuales."];
+  };
+
   const toggleTransport = (transport: string) => {
     setSelectedTransport((current) =>
       current.includes(transport)
@@ -342,6 +383,10 @@ export function PlanTrip() {
     let weatherLabelToSave = weatherLocationLabel;
     let forecastToSave: Next24HoursWeather | null = null;
     let coordsForWeather: LatLng | null = destinationCoordinates;
+    let originCoordsForTraffic: LatLng | null = originCoordinates;
+    let destinationCoordsForTraffic: LatLng | null = destinationCoordinates;
+    let trafficByTransport: Record<string, TrafficRoute> = {};
+    let trafficFallbackMessage: string | undefined;
 
     if (destination.trim()) {
       try {
@@ -374,6 +419,54 @@ export function PlanTrip() {
       }
     }
 
+    try {
+      if (!originCoordsForTraffic && origin.trim()) {
+        const geocodedOrigin = await geocodeLocation(origin);
+        if (geocodedOrigin) {
+          originCoordsForTraffic = [geocodedOrigin.latitude, geocodedOrigin.longitude];
+        }
+      }
+
+      if (!destinationCoordsForTraffic && destination.trim()) {
+        const geocodedDestination = await geocodeLocation(destination);
+        if (geocodedDestination) {
+          destinationCoordsForTraffic = [geocodedDestination.latitude, geocodedDestination.longitude];
+        }
+      }
+
+      if (originCoordsForTraffic && destinationCoordsForTraffic) {
+        const trafficResults = await Promise.allSettled(
+          selectedTransport.map((mode) =>
+            getRouteTraffic({
+              originLat: originCoordsForTraffic![0],
+              originLon: originCoordsForTraffic![1],
+              destinationLat: destinationCoordsForTraffic![0],
+              destinationLon: destinationCoordsForTraffic![1],
+              travelMode: transportToTomTomMode[mode] ?? "car",
+            }).then((traffic) => ({ mode, traffic })),
+          ),
+        );
+
+        trafficByTransport = trafficResults.reduce<Record<string, TrafficRoute>>((acc, result) => {
+          if (result.status === "fulfilled") {
+            acc[result.value.mode] = result.value.traffic;
+          }
+          return acc;
+        }, {});
+
+        const firstRejected = trafficResults.find((result) => result.status === "rejected");
+        if (Object.keys(trafficByTransport).length === 0 && firstRejected?.status === "rejected") {
+          trafficFallbackMessage =
+            firstRejected.reason instanceof Error
+              ? firstRejected.reason.message
+              : "No se pudo estimar el trafico de la ruta con los datos actuales.";
+        }
+      }
+    } catch {
+      // Si falla trafico, mantenemos el guardado del viaje.
+      trafficFallbackMessage = "No se pudo estimar el trafico de la ruta con los datos actuales.";
+    }
+
     const trip: SavedTrip = {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
@@ -383,10 +476,12 @@ export function PlanTrip() {
       transport: selectedTransport,
       notes: notes.trim(),
       originCoordinates,
-      destinationCoordinates: destinationCoordinates ?? coordsForWeather,
+      destinationCoordinates: destinationCoordinates ?? coordsForWeather ?? destinationCoordsForTraffic,
       weather: weatherToSave,
       weatherLocationLabel: weatherLabelToSave,
       weatherWarnings: buildWeatherWarnings(weatherToSave, forecastToSave),
+      trafficWarnings: buildTrafficWarnings(trafficByTransport, selectedTransport, trafficFallbackMessage),
+      trafficByTransport,
       forecastSnapshot: forecastToSave,
     };
 
@@ -519,11 +614,11 @@ export function PlanTrip() {
                 {trip.notes && <p className="text-xs text-slate-600">Notas: {trip.notes}</p>}
                 <div className="pt-1">
                   <p className="text-xs text-slate-900 mb-1">
-                    Advertencias del clima
+                    Advertencias del viaje
                     {trip.weatherLocationLabel ? ` (${trip.weatherLocationLabel})` : ""}:
                   </p>
                   <ul className="text-xs list-disc pl-4 space-y-1">
-                    {trip.weatherWarnings.map((warning) => (
+                    {[...(trip.weatherWarnings ?? []), ...((trip.trafficWarnings ?? []))].map((warning) => (
                       <li key={warning} className="text-amber-700">
                         <button
                           type="button"
