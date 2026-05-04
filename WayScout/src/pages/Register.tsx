@@ -4,21 +4,57 @@ import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Label } from "../components/ui/label";
 import { MapPin, ArrowLeft } from "lucide-react";
+import { useAuth } from "../context/AuthContext";
 
 export function Register() {
   const navigate = useNavigate();
+  const { register } = useAuth();
   const [formData, setFormData] = useState({
     name: "",
     email: "",
     password: "",
     confirmPassword: "",
   });
+  const [isSubmitting, setIsSubmitting] = useState(false);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
-  const handleRegister = (e: React.FormEvent) => {
+  const getRegisterErrorMessage = (error: unknown) => {
+    if (error && typeof error === "object" && "code" in error) {
+      switch ((error as { code: string }).code) {
+        case "auth/email-already-in-use":
+          return "Ya existe una cuenta con ese correo.";
+        case "auth/invalid-email":
+          return "El correo no tiene un formato valido.";
+        case "auth/weak-password":
+          return "La contrasena debe tener al menos 6 caracteres.";
+        default:
+          return "No fue posible crear la cuenta. Intenta de nuevo.";
+      }
+    }
+    return "No fue posible crear la cuenta. Intenta de nuevo.";
+  };
+
+  const handleRegister = async (e: React.FormEvent) => {
     e.preventDefault();
-    // Simulación de registro - en producción conectaría con backend
-    if (formData.password === formData.confirmPassword) {
-      navigate("/");
+    if (formData.password !== formData.confirmPassword) {
+      setErrorMessage("Las contraseñas no coinciden.");
+      return;
+    }
+
+    setIsSubmitting(true);
+    setErrorMessage(null);
+
+    try {
+      await register({
+        name: formData.name,
+        email: formData.email,
+        password: formData.password,
+      });
+      navigate("/", { replace: true });
+    } catch (error) {
+      setErrorMessage(getRegisterErrorMessage(error));
+    } finally {
+      setIsSubmitting(false);
     }
   };
 
@@ -52,6 +88,11 @@ export function Register() {
           onSubmit={handleRegister}
           className="space-y-5 bg-white border border-slate-100 rounded-2xl p-5 shadow-sm"
         >
+          {errorMessage ? (
+            <div className="rounded-xl border border-red-100 bg-red-50 px-3 py-2 text-sm text-red-700">
+              {errorMessage}
+            </div>
+          ) : null}
           <div className="space-y-2">
             <Label htmlFor="name" className="text-slate-700">
               Nombre completo
@@ -115,8 +156,9 @@ export function Register() {
           <Button
             type="submit"
             className="w-full bg-blue-600 hover:bg-blue-700 text-white py-6 mt-6"
+            disabled={isSubmitting}
           >
-            Registrarse
+            {isSubmitting ? "Creando cuenta..." : "Registrarse"}
           </Button>
         </form>
 
