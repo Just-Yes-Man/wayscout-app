@@ -70,6 +70,8 @@ public class WeatherService {
                         hourNode.path("time").asText(),
                         hourNode.path("temp_c").asDouble(),
                         hourNode.path("chance_of_rain").asInt(),
+                        hourNode.path("will_it_rain").asInt(),
+                        hourNode.path("precip_mm").asDouble(),
                         hourNode.path("condition").path("text").asText()
                 ));
             }
@@ -103,6 +105,8 @@ public class WeatherService {
                             hourNode.path("time").asText(),
                             hourNode.path("temp_c").asDouble(),
                             hourNode.path("chance_of_rain").asInt(),
+                            hourNode.path("will_it_rain").asInt(),
+                            hourNode.path("precip_mm").asDouble(),
                             hourNode.path("condition").path("text").asText()
                     ));
                 }
