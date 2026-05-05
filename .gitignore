@@ -6,6 +6,7 @@ target/
 WayScout/node_modules/
 WayScout/dist/
 WayScout/dev-dist/
+.env
 
 ### STS ###
 .apt_generated
