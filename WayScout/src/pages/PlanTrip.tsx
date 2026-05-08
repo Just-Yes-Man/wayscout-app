@@ -17,7 +17,6 @@ import { getRouteTraffic, type TrafficRoute } from "../services/trafficApi";
 import {
   CheckCircle,
   MapPin,
-  Route,
   Bus,
   Car,
   Bike,
@@ -25,6 +24,22 @@ import {
   LoaderCircle,
   CloudSun,
   AlertCircle,
+  AlertTriangle,
+  ArrowLeft,
+  ArrowRight,
+  Calendar,
+  ChevronDown,
+  ChevronRight,
+  Compass,
+  Flag,
+  Info,
+  Plus,
+  StickyNote,
+  Thermometer,
+  Trash2,
+  Wind,
+  Droplets,
+  Plane,
 } from "lucide-react";
 
 type LatLng = [number, number];
@@ -128,6 +143,71 @@ const transportOptions = [
   { id: "caminando", label: "Caminando", icon: Footprints },
 ] as const;
 
+type WarningSeverity = "high" | "medium" | "info";
+
+const classifyWarningSeverity = (warning: string): WarningSeverity => {
+  const w = warning.toLowerCase();
+  if (
+    /intens|torrencial|tormenta|trueno|alto impacto|inundad|deslave|calor|frío|frio|viento fuerte/.test(
+      w,
+    )
+  ) {
+    return "high";
+  }
+  if (/moderad|ligera|llovizna|humedad|niebla|visibilidad|impermeable|abrigo|paraguas/.test(w)) {
+    return "medium";
+  }
+  return "info";
+};
+
+const severityStyles: Record<
+  WarningSeverity,
+  { container: string; icon: string; iconBg: string; label: string; labelText: string }
+> = {
+  high: {
+    container: "border-red-200 bg-red-50/60 hover:bg-red-50",
+    icon: "text-red-600",
+    iconBg: "bg-red-100",
+    label: "Alta",
+    labelText: "text-red-700",
+  },
+  medium: {
+    container: "border-amber-200 bg-amber-50/60 hover:bg-amber-50",
+    icon: "text-amber-600",
+    iconBg: "bg-amber-100",
+    label: "Media",
+    labelText: "text-amber-700",
+  },
+  info: {
+    container: "border-slate-200 bg-slate-50/80 hover:bg-slate-100",
+    icon: "text-slate-500",
+    iconBg: "bg-slate-100",
+    label: "Info",
+    labelText: "text-slate-600",
+  },
+};
+
+const SeverityIcon = ({ severity, className }: { severity: WarningSeverity; className?: string }) => {
+  if (severity === "high") return <AlertTriangle className={className} />;
+  if (severity === "medium") return <AlertCircle className={className} />;
+  return <Info className={className} />;
+};
+
+const formatTripDate = (iso: string): string => {
+  if (!iso) return "Sin fecha";
+  const [year, month, day] = iso.split("-").map(Number);
+  if (!year || !month || !day) return iso;
+  const date = new Date(year, month - 1, day);
+  return date.toLocaleDateString("es-MX", {
+    weekday: "short",
+    day: "numeric",
+    month: "short",
+    year: "numeric",
+  });
+};
+
+const transportFromId = (id: string) => transportOptions.find((opt) => opt.id === id);
+
 const transportToTomTomMode: Record<string, string> = {
   carro: "car",
   bus: "bus",
@@ -159,11 +239,16 @@ export function PlanTrip() {
   const [forecastByTrip, setForecastByTrip] = useState<Record<string, Next24HoursWeather>>({});
   const [forecastLoadingTripId, setForecastLoadingTripId] = useState<string | null>(null);
   const [forecastErrorByTrip, setForecastErrorByTrip] = useState<Record<string, string>>({});
+  const [isSavingTrip, setIsSavingTrip] = useState(false);
+  const [savingStep, setSavingStep] = useState<string>("");
+  const [isClearingTrips, setIsClearingTrips] = useState(false);
+  const [tripsLoading, setTripsLoading] = useState(true);
 
   useEffect(() => {
     const currentTrips = localStorage.getItem("wayscout_trips");
     const parsedTrips = currentTrips ? (JSON.parse(currentTrips) as SavedTrip[]) : [];
     setTrips(parsedTrips);
+    setTripsLoading(false);
   }, []);
 
   const buildWeatherWarnings = (
@@ -377,7 +462,10 @@ export function PlanTrip() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (selectedTransport.length === 0) return;
+    if (selectedTransport.length === 0 || isSavingTrip) return;
+
+    setIsSavingTrip(true);
+    setSavingStep("Preparando tu viaje...");
 
     let weatherToSave = weatherPreview;
     let weatherLabelToSave = weatherLocationLabel;
@@ -391,6 +479,7 @@ export function PlanTrip() {
     if (destination.trim()) {
       try {
         if (!coordsForWeather) {
+          setSavingStep("Localizando destino...");
           const geocodedLocation = await geocodeLocation(destination);
           if (geocodedLocation) {
             coordsForWeather = [geocodedLocation.latitude, geocodedLocation.longitude];
@@ -399,6 +488,7 @@ export function PlanTrip() {
         }
 
         if (coordsForWeather) {
+          setSavingStep("Consultando clima del destino...");
           const [lat, lon] = coordsForWeather;
           const [currentResult, forecastResult] = await Promise.allSettled([
             weatherToSave
@@ -421,6 +511,7 @@ export function PlanTrip() {
 
     try {
       if (!originCoordsForTraffic && origin.trim()) {
+        setSavingStep("Localizando punto de salida...");
         const geocodedOrigin = await geocodeLocation(origin);
         if (geocodedOrigin) {
           originCoordsForTraffic = [geocodedOrigin.latitude, geocodedOrigin.longitude];
@@ -435,6 +526,7 @@ export function PlanTrip() {
       }
 
       if (originCoordsForTraffic && destinationCoordsForTraffic) {
+        setSavingStep("Analizando tráfico de la ruta...");
         const trafficResults = await Promise.allSettled(
           selectedTransport.map((mode) =>
             getRouteTraffic({
@@ -467,6 +559,8 @@ export function PlanTrip() {
       trafficFallbackMessage = "No se pudo estimar el trafico de la ruta con los datos actuales.";
     }
 
+    setSavingStep("Guardando viaje...");
+
     const trip: SavedTrip = {
       id: crypto.randomUUID(),
       createdAt: new Date().toISOString(),
@@ -490,6 +584,8 @@ export function PlanTrip() {
     setTrips(updatedTrips);
     setLastCreatedTripId(trip.id);
     resetForm();
+    setIsSavingTrip(false);
+    setSavingStep("");
     setView("list");
   };
 
@@ -542,278 +638,631 @@ export function PlanTrip() {
   };
 
   const handleClearAllTrips = () => {
-    if (trips.length === 0) return;
+    if (trips.length === 0 || isClearingTrips) return;
     const confirmed = window.confirm(
       "¿Borrar todos los viajes guardados? Esta acción no se puede deshacer.",
     );
     if (!confirmed) return;
 
-    localStorage.removeItem("wayscout_trips");
-    setTrips([]);
-    setLastCreatedTripId(null);
-    setSelectedWarning(null);
-    setForecastByTrip({});
-    setForecastErrorByTrip({});
-    setForecastLoadingTripId(null);
+    setIsClearingTrips(true);
+    setTimeout(() => {
+      localStorage.removeItem("wayscout_trips");
+      setTrips([]);
+      setLastCreatedTripId(null);
+      setSelectedWarning(null);
+      setForecastByTrip({});
+      setForecastErrorByTrip({});
+      setForecastLoadingTripId(null);
+      setIsClearingTrips(false);
+    }, 350);
   };
 
   if (view === "list") {
+    const totalAlerts = trips.reduce(
+      (acc, trip) =>
+        acc + (trip.weatherWarnings?.length ?? 0) + (trip.trafficWarnings?.length ?? 0),
+      0,
+    );
+    const highPriorityCount = trips.reduce((acc, trip) => {
+      const warnings = [
+        ...(trip.weatherWarnings ?? []),
+        ...(trip.trafficWarnings ?? []),
+      ];
+      return acc + warnings.filter((w) => classifyWarningSeverity(w) === "high").length;
+    }, 0);
+
     return (
-      <div className="h-full overflow-y-auto bg-slate-50 pb-4">
-        <div className="bg-white px-6 pt-6 pb-5 border-b border-slate-100 mb-4">
-          <h1 className="text-2xl mb-1 text-slate-900">Mis viajes</h1>
-          <p className="text-slate-500 text-sm">
-            Revisa los viajes creados o agrega uno nuevo.
-          </p>
+      <div className="h-full overflow-y-auto bg-slate-50 pb-28">
+        <div className="bg-gradient-to-br from-blue-600 to-blue-700 px-6 pt-6 pb-8 text-white">
+          <button
+            type="button"
+            onClick={() => navigate("/")}
+            className="inline-flex items-center gap-1.5 text-sm text-blue-100 hover:text-white mb-4 transition-colors"
+          >
+            <ArrowLeft className="w-4 h-4" />
+            Inicio
+          </button>
+
+          <div className="flex items-start justify-between gap-3 mb-5">
+            <div>
+              <h1 className="text-2xl mb-1">Mis viajes</h1>
+              <p className="text-blue-100 text-sm">
+                Planifica con anticipación y mantente al tanto del clima y tráfico.
+              </p>
+            </div>
+            <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-2.5 flex-shrink-0">
+              <Plane className="w-6 h-6" />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-3 gap-2.5">
+            <div className="bg-white/12 backdrop-blur-sm rounded-xl p-3 border border-white/15">
+              <p className="text-[11px] uppercase tracking-wide text-blue-100">Viajes</p>
+              <p className="text-2xl mt-0.5">{trips.length}</p>
+            </div>
+            <div className="bg-white/12 backdrop-blur-sm rounded-xl p-3 border border-white/15">
+              <p className="text-[11px] uppercase tracking-wide text-blue-100">Alertas</p>
+              <p className="text-2xl mt-0.5">{totalAlerts}</p>
+            </div>
+            <div className="bg-white/12 backdrop-blur-sm rounded-xl p-3 border border-white/15">
+              <p className="text-[11px] uppercase tracking-wide text-blue-100">Prioritarias</p>
+              <p className="text-2xl mt-0.5">{highPriorityCount}</p>
+            </div>
+          </div>
         </div>
 
-        <div className="px-6 space-y-4">
-          <Button
-            className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
+        <div className="px-5 -mt-5 space-y-4">
+          <button
+            type="button"
             onClick={() => setView("create")}
+            className="w-full bg-white border border-slate-200 rounded-2xl p-4 shadow-md hover:shadow-lg hover:border-blue-200 transition-all flex items-center gap-3 text-left"
           >
-            Crear viaje
-          </Button>
+            <div className="bg-blue-600 text-white rounded-xl p-2.5 flex-shrink-0">
+              <Plus className="w-5 h-5" />
+            </div>
+            <div className="flex-1 min-w-0">
+              <p className="text-slate-900">Planificar nuevo viaje</p>
+              <p className="text-xs text-slate-500">Origen, destino, fecha y transporte</p>
+            </div>
+            <ChevronRight className="w-5 h-5 text-slate-400 flex-shrink-0" />
+          </button>
 
-          {trips.length > 0 && (
-            <Button
-              variant="outline"
-              className="w-full h-11 border-red-200 text-red-700 hover:bg-red-50 rounded-xl"
-              onClick={handleClearAllTrips}
-            >
-              Borrar todos los viajes
-            </Button>
-          )}
-
-          {trips.length === 0 ? (
-            <div className="bg-white border border-slate-200 rounded-xl p-5 text-center text-slate-600">
-              Aun no hay viajes guardados.
+          {tripsLoading ? (
+            <div className="space-y-3">
+              {[0, 1].map((i) => (
+                <div
+                  key={i}
+                  className="bg-white border border-slate-200 rounded-2xl p-4 animate-pulse"
+                >
+                  <div className="flex items-center justify-between mb-3">
+                    <div className="h-5 w-28 bg-slate-200 rounded-full" />
+                    <div className="h-4 w-16 bg-slate-200 rounded-full" />
+                  </div>
+                  <div className="space-y-2 pl-6">
+                    <div className="h-3 w-16 bg-slate-100 rounded" />
+                    <div className="h-4 w-3/4 bg-slate-200 rounded" />
+                    <div className="h-3 w-16 bg-slate-100 rounded mt-3" />
+                    <div className="h-4 w-2/3 bg-slate-200 rounded" />
+                  </div>
+                  <div className="flex gap-2 mt-3">
+                    <div className="h-6 w-16 bg-slate-100 rounded-full" />
+                    <div className="h-6 w-20 bg-slate-100 rounded-full" />
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : trips.length === 0 ? (
+            <div className="bg-white border border-dashed border-slate-300 rounded-2xl p-8 text-center">
+              <div className="w-14 h-14 mx-auto rounded-full bg-blue-50 text-blue-600 flex items-center justify-center mb-3">
+                <Compass className="w-7 h-7" />
+              </div>
+              <p className="text-slate-900 mb-1">Aún no hay viajes guardados</p>
+              <p className="text-sm text-slate-500">
+                Crea tu primer viaje y revisa el clima y tráfico antes de salir.
+              </p>
             </div>
           ) : (
-            trips.map((trip) => (
-              <div
-                key={trip.id}
-                className={`bg-white border rounded-xl p-4 shadow-sm space-y-2 ${
-                  trip.id === lastCreatedTripId ? "border-blue-300" : "border-slate-200"
-                }`}
-              >
-                <div className="flex items-start justify-between gap-3">
-                  <p className="text-sm text-slate-900">
-                    <strong>{trip.origin}</strong> → <strong>{trip.destination}</strong>
-                  </p>
-                  {trip.id === lastCreatedTripId && (
-                    <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">
-                      <CheckCircle className="w-3.5 h-3.5" />
-                      Nuevo
-                    </span>
+            <>
+              <div className="flex items-center justify-between pt-1">
+                <h2 className="text-sm uppercase tracking-wide text-slate-500">
+                  Viajes guardados
+                </h2>
+                <button
+                  type="button"
+                  onClick={handleClearAllTrips}
+                  disabled={isClearingTrips}
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-red-600 transition-colors disabled:opacity-60 disabled:cursor-not-allowed"
+                >
+                  {isClearingTrips ? (
+                    <>
+                      <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                      Borrando...
+                    </>
+                  ) : (
+                    <>
+                      <Trash2 className="w-3.5 h-3.5" />
+                      Borrar todos
+                    </>
                   )}
-                </div>
-                <p className="text-xs text-slate-600">
-                  Fecha: {trip.travelDate} · Transporte: {trip.transport.join(", ")}
-                </p>
-                {trip.notes && <p className="text-xs text-slate-600">Notas: {trip.notes}</p>}
-                <div className="pt-1">
-                  <p className="text-xs text-slate-900 mb-1">
-                    Advertencias del viaje
-                    {trip.weatherLocationLabel ? ` (${trip.weatherLocationLabel})` : ""}:
-                  </p>
-                  <ul className="text-xs list-disc pl-4 space-y-1">
-                    {[...(trip.weatherWarnings ?? []), ...((trip.trafficWarnings ?? []))].map((warning) => (
-                      <li key={warning} className="text-amber-700">
-                        <button
-                          type="button"
-                          onClick={() => handleWarningTap(trip, warning)}
-                          className="text-left underline-offset-2 hover:underline"
-                        >
-                          {warning}
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
+                </button>
+              </div>
 
-                  {selectedWarning?.tripId === trip.id && (
-                    <div className="mt-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
-                      <p className="text-xs text-slate-700 mb-2">
-                        Pronóstico horario que sustenta la advertencia:
-                      </p>
+              <div className="space-y-3">
+                {trips.map((trip) => {
+                  const allWarnings = [
+                    ...(trip.weatherWarnings ?? []),
+                    ...(trip.trafficWarnings ?? []),
+                  ];
+                  const severityCounts = allWarnings.reduce(
+                    (acc, w) => {
+                      acc[classifyWarningSeverity(w)] += 1;
+                      return acc;
+                    },
+                    { high: 0, medium: 0, info: 0 } as Record<WarningSeverity, number>,
+                  );
+                  const isNew = trip.id === lastCreatedTripId;
 
-                      {forecastLoadingTripId === trip.id && (
-                        <p className="text-xs text-slate-600">Consultando clima próximo...</p>
-                      )}
+                  return (
+                    <div
+                      key={trip.id}
+                      className={`bg-white border rounded-2xl shadow-sm overflow-hidden transition-all ${
+                        isNew ? "border-blue-300 ring-2 ring-blue-100" : "border-slate-200"
+                      }`}
+                    >
+                      <div className="p-4 pb-3">
+                        <div className="flex items-start justify-between gap-3 mb-3">
+                          <div className="inline-flex items-center gap-1.5 bg-slate-100 text-slate-700 rounded-full px-2.5 py-1 text-xs">
+                            <Calendar className="w-3.5 h-3.5" />
+                            {formatTripDate(trip.travelDate)}
+                          </div>
+                          {isNew && (
+                            <span className="inline-flex items-center gap-1 text-xs text-blue-700 bg-blue-50 border border-blue-200 rounded-full px-2 py-0.5">
+                              <CheckCircle className="w-3.5 h-3.5" />
+                              Nuevo
+                            </span>
+                          )}
+                        </div>
 
-                      {forecastErrorByTrip[trip.id] && (
-                        <p className="text-xs text-red-600">{forecastErrorByTrip[trip.id]}</p>
-                      )}
+                        <div className="relative pl-6">
+                          <span className="absolute left-1.5 top-2 w-3 h-3 rounded-full bg-blue-600 ring-4 ring-blue-100" />
+                          <span className="absolute left-2.5 top-6 bottom-6 w-px border-l-2 border-dashed border-slate-300" />
+                          <span className="absolute left-1 bottom-1.5 text-blue-600">
+                            <Flag className="w-4 h-4" />
+                          </span>
 
-                      {!forecastLoadingTripId && forecastByTrip[trip.id] && (
-                        <div className="space-y-1">
-                          <p className="text-xs text-slate-700">
-                            Próximas horas en{" "}
-                            <strong>{trip.weatherLocationLabel ?? forecastByTrip[trip.id].city}</strong>
-                          </p>
-                          {forecastByTrip[trip.id].remainingHourlyForecast
-                            .slice(0, 4)
-                            .map((hour) => (
-                              <p key={hour.time} className="text-xs text-slate-600">
-                                {formatHour(hour.time)} · {Math.round(hour.temperatureC)}°C ·{" "}
-                                Prob. {hour.chanceOfRain}% · {hour.precipMm.toFixed(1)} mm ·{" "}
-                                {translateCondition(hour.condition)}
+                          <div className="mb-3">
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              Origen
+                            </p>
+                            <p className="text-sm text-slate-900">{trip.origin || "—"}</p>
+                          </div>
+                          <div>
+                            <p className="text-[11px] uppercase tracking-wide text-slate-400">
+                              Destino
+                            </p>
+                            <p className="text-sm text-slate-900">{trip.destination || "—"}</p>
+                          </div>
+                        </div>
+
+                        <div className="flex flex-wrap gap-1.5 mt-3">
+                          {trip.transport.map((mode) => {
+                            const opt = transportFromId(mode);
+                            const Icon = opt?.icon ?? Car;
+                            return (
+                              <span
+                                key={mode}
+                                className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 border border-blue-100 rounded-full px-2.5 py-1 text-xs"
+                              >
+                                <Icon className="w-3.5 h-3.5" />
+                                {opt?.label ?? mode}
+                              </span>
+                            );
+                          })}
+                        </div>
+
+                        {trip.notes && (
+                          <div className="mt-3 flex items-start gap-2 bg-slate-50 border border-slate-100 rounded-lg p-2.5">
+                            <StickyNote className="w-4 h-4 text-slate-400 mt-0.5 flex-shrink-0" />
+                            <p className="text-xs text-slate-600">{trip.notes}</p>
+                          </div>
+                        )}
+
+                        {trip.weather && (
+                          <div className="mt-3 flex items-center gap-3 bg-gradient-to-r from-sky-50 to-blue-50 border border-sky-100 rounded-xl px-3 py-2.5">
+                            <div className="bg-white text-sky-600 rounded-lg p-2 shadow-sm">
+                              <CloudSun className="w-5 h-5" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <p className="text-xs text-slate-500">
+                                Clima en {trip.weatherLocationLabel ?? trip.weather.city}
                               </p>
-                            ))}
-                          <p className="text-[10px] text-slate-500 mt-1">
-                            Fuente: WeatherAPI.com. Precisión limitada en localidades pequeñas; verifica con SMN/Conagua antes de viajes críticos.
-                          </p>
+                              <p className="text-sm text-slate-900 truncate">
+                                {translateCondition(trip.weather.condition)}
+                              </p>
+                            </div>
+                            <div className="flex items-center gap-3 text-xs text-slate-500">
+                              <span className="inline-flex items-center gap-1">
+                                <Thermometer className="w-3.5 h-3.5" />
+                                {Math.round(trip.weather.temperatureC)}°
+                              </span>
+                              <span className="inline-flex items-center gap-1">
+                                <Droplets className="w-3.5 h-3.5" />
+                                {trip.weather.humidity}%
+                              </span>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+
+                      {allWarnings.length > 0 && (
+                        <div className="border-t border-slate-100 bg-slate-50/50 px-4 py-3">
+                          <div className="flex items-center justify-between mb-2">
+                            <p className="text-xs uppercase tracking-wide text-slate-500">
+                              Advertencias
+                            </p>
+                            <div className="flex items-center gap-1.5 text-[11px]">
+                              {severityCounts.high > 0 && (
+                                <span className="inline-flex items-center gap-1 bg-red-100 text-red-700 rounded-full px-2 py-0.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-red-600" />
+                                  {severityCounts.high} alta
+                                </span>
+                              )}
+                              {severityCounts.medium > 0 && (
+                                <span className="inline-flex items-center gap-1 bg-amber-100 text-amber-700 rounded-full px-2 py-0.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-600" />
+                                  {severityCounts.medium} media
+                                </span>
+                              )}
+                              {severityCounts.info > 0 && (
+                                <span className="inline-flex items-center gap-1 bg-slate-200 text-slate-600 rounded-full px-2 py-0.5">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-slate-500" />
+                                  {severityCounts.info} info
+                                </span>
+                              )}
+                            </div>
+                          </div>
+
+                          <div className="space-y-2">
+                            {allWarnings.map((warning) => {
+                              const severity = classifyWarningSeverity(warning);
+                              const styles = severityStyles[severity];
+                              const isSelected =
+                                selectedWarning?.tripId === trip.id &&
+                                selectedWarning.warning === warning;
+
+                              return (
+                                <div key={warning}>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleWarningTap(trip, warning)}
+                                    className={`w-full text-left rounded-xl border p-2.5 transition-all flex items-start gap-2.5 ${styles.container}`}
+                                  >
+                                    <div
+                                      className={`${styles.iconBg} ${styles.icon} rounded-lg p-1.5 flex-shrink-0`}
+                                    >
+                                      <SeverityIcon
+                                        severity={severity}
+                                        className="w-3.5 h-3.5"
+                                      />
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                      <p className={`text-[11px] uppercase tracking-wide ${styles.labelText} mb-0.5`}>
+                                        {styles.label}
+                                      </p>
+                                      <p className="text-xs text-slate-700 leading-relaxed">
+                                        {warning}
+                                      </p>
+                                    </div>
+                                    <ChevronDown
+                                      className={`w-4 h-4 text-slate-400 flex-shrink-0 mt-1 transition-transform ${
+                                        isSelected ? "rotate-180" : ""
+                                      }`}
+                                    />
+                                  </button>
+
+                                  {isSelected && (
+                                    <div className="mt-2 ml-9 rounded-xl border border-slate-200 bg-white p-3">
+                                      <p className="text-[11px] uppercase tracking-wide text-slate-500 mb-2">
+                                        Pronóstico que sustenta la advertencia
+                                      </p>
+
+                                      {forecastLoadingTripId === trip.id && (
+                                        <div className="flex items-center gap-2 text-xs text-slate-500">
+                                          <LoaderCircle className="w-3.5 h-3.5 animate-spin" />
+                                          Consultando clima próximo...
+                                        </div>
+                                      )}
+
+                                      {forecastErrorByTrip[trip.id] && (
+                                        <p className="text-xs text-red-600">
+                                          {forecastErrorByTrip[trip.id]}
+                                        </p>
+                                      )}
+
+                                      {!forecastLoadingTripId && forecastByTrip[trip.id] && (
+                                        <div className="space-y-2">
+                                          <p className="text-xs text-slate-600">
+                                            Próximas horas en{" "}
+                                            <strong>
+                                              {trip.weatherLocationLabel ??
+                                                forecastByTrip[trip.id].city}
+                                            </strong>
+                                          </p>
+                                          <div className="grid grid-cols-2 gap-1.5">
+                                            {forecastByTrip[trip.id].remainingHourlyForecast
+                                              .slice(0, 4)
+                                              .map((hour) => (
+                                                <div
+                                                  key={hour.time}
+                                                  className="bg-slate-50 border border-slate-100 rounded-lg p-2"
+                                                >
+                                                  <p className="text-xs text-slate-900">
+                                                    {formatHour(hour.time)} ·{" "}
+                                                    {Math.round(hour.temperatureC)}°
+                                                  </p>
+                                                  <p className="text-[11px] text-slate-500 truncate">
+                                                    {translateCondition(hour.condition)}
+                                                  </p>
+                                                  <p className="text-[11px] text-blue-600 mt-0.5">
+                                                    {hour.chanceOfRain}% lluvia
+                                                  </p>
+                                                </div>
+                                              ))}
+                                          </div>
+                                          <p className="text-[10px] text-slate-400 leading-tight">
+                                            Fuente: WeatherAPI.com. Precisión limitada en
+                                            localidades pequeñas; verifica con SMN/Conagua antes
+                                            de viajes críticos.
+                                          </p>
+                                        </div>
+                                      )}
+                                    </div>
+                                  )}
+                                </div>
+                              );
+                            })}
+                          </div>
                         </div>
                       )}
                     </div>
-                  )}
-                </div>
+                  );
+                })}
               </div>
-            ))
+            </>
           )}
-
-          <Button variant="outline" className="w-full" onClick={() => navigate("/")}>
-            Volver al inicio
-          </Button>
         </div>
       </div>
     );
   }
 
+  const formCompletion = [
+    origin.trim().length > 0,
+    destination.trim().length > 0,
+    travelDate.length > 0,
+    selectedTransport.length > 0,
+  ].filter(Boolean).length;
+  const progressPercent = (formCompletion / 4) * 100;
+
   return (
-    <div className="h-full overflow-y-auto bg-slate-50 pb-4">
-      <div className="bg-white px-6 pt-6 pb-5 border-b border-slate-100 mb-4">
-        <h1 className="text-2xl mb-1 text-slate-900">Crear viaje</h1>
-        <p className="text-slate-500 text-sm">
-          Define tu punto de salida, destino y medio de transporte.
-        </p>
-      </div>
+    <div className="h-full overflow-y-auto bg-slate-50 pb-32">
+      <div className="bg-gradient-to-br from-blue-600 to-blue-700 px-6 pt-6 pb-7 text-white">
+        <button
+          type="button"
+          onClick={() => setView("list")}
+          className="inline-flex items-center gap-1.5 text-sm text-blue-100 hover:text-white mb-4 transition-colors"
+        >
+          <ArrowLeft className="w-4 h-4" />
+          Mis viajes
+        </button>
 
-      <div className="px-6 mb-4">
-        <Button variant="outline" className="w-full" onClick={() => setView("list")}>
-          Ver lista de viajes
-        </Button>
-      </div>
-
-      <form onSubmit={handleSubmit} className="p-6 space-y-6">
-        <div className="space-y-2 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
-          <Label htmlFor="origin" className="text-slate-900">
-            Lugar de salida *
-          </Label>
-          <div className="relative">
-            <MapPin className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-blue-500" />
-            <Input
-              id="origin"
-              type="text"
-              placeholder="Ej: Zona 10, Ciudad de Guatemala"
-              value={origin}
-              onChange={(e) => setOrigin(e.target.value)}
-              className="pl-10 bg-white border-slate-200 focus:border-blue-500"
-              required
-            />
+        <div className="flex items-start justify-between gap-3 mb-5">
+          <div>
+            <h1 className="text-2xl mb-1">Planificar viaje</h1>
+            <p className="text-blue-100 text-sm">
+              Completa los detalles y revisaremos el clima y tráfico por ti.
+            </p>
           </div>
-          <button
-            type="button"
-            onClick={() => openMapPicker("origin")}
-            className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-          >
-            <MapPin className="w-4 h-4" />
-            Elegir en el mapa
-          </button>
+          <div className="bg-white/15 backdrop-blur-sm rounded-2xl p-2.5 flex-shrink-0">
+            <Plane className="w-6 h-6" />
+          </div>
         </div>
 
-        <div className="space-y-3 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
-          <Label htmlFor="destination" className="text-slate-900">
-            Objetivo / destino *
-          </Label>
-          <div className="relative">
-            <Route className="absolute left-3 top-1/2 transform -translate-y-1/2 w-5 h-5 text-blue-500" />
-            <Input
-              id="destination"
-              type="text"
-              placeholder="Ej: Antigua Guatemala"
-              value={destination}
-              onChange={(e) => setDestination(e.target.value)}
-              className="pl-10 bg-white border-slate-200 focus:border-blue-500"
-              required
+        <div className="space-y-1.5">
+          <div className="flex items-center justify-between text-xs text-blue-100">
+            <span>Progreso</span>
+            <span>{formCompletion} de 4 pasos</span>
+          </div>
+          <div className="h-1.5 bg-white/20 rounded-full overflow-hidden">
+            <div
+              className="h-full bg-white rounded-full transition-all duration-500"
+              style={{ width: `${progressPercent}%` }}
             />
           </div>
+        </div>
+      </div>
+
+      <form onSubmit={handleSubmit} className="px-5 -mt-4 space-y-4">
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm">
+              1
+            </div>
+            <div>
+              <h2 className="text-slate-900">Ruta</h2>
+              <p className="text-xs text-slate-500">¿De dónde sales y a dónde vas?</p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <span className="absolute left-4 top-12 bottom-12 w-px border-l-2 border-dashed border-slate-300" />
+
+            <div className="space-y-1.5 mb-3">
+              <Label htmlFor="origin" className="text-xs uppercase tracking-wide text-slate-500">
+                Lugar de salida *
+              </Label>
+              <div className="relative">
+                <span className="absolute left-2.5 top-1/2 -translate-y-1/2 w-3 h-3 rounded-full bg-blue-600 ring-4 ring-blue-100 z-10" />
+                <Input
+                  id="origin"
+                  type="text"
+                  placeholder="Ej: Zona 10, Ciudad de Guatemala"
+                  value={origin}
+                  onChange={(e) => setOrigin(e.target.value)}
+                  className="pl-10 h-11 bg-white border-slate-200 focus:border-blue-500"
+                  required
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => openMapPicker("origin")}
+                className="ml-10 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                Elegir en el mapa
+              </button>
+            </div>
+
+            <div className="space-y-1.5 mt-4">
+              <Label
+                htmlFor="destination"
+                className="text-xs uppercase tracking-wide text-slate-500"
+              >
+                Destino *
+              </Label>
+              <div className="relative">
+                <span className="absolute left-2 top-1/2 -translate-y-1/2 text-blue-600 z-10">
+                  <Flag className="w-4 h-4" />
+                </span>
+                <Input
+                  id="destination"
+                  type="text"
+                  placeholder="Ej: Antigua Guatemala"
+                  value={destination}
+                  onChange={(e) => setDestination(e.target.value)}
+                  className="pl-10 h-11 bg-white border-slate-200 focus:border-blue-500"
+                  required
+                />
+              </div>
+              <button
+                type="button"
+                onClick={() => openMapPicker("destination")}
+                className="ml-10 inline-flex items-center gap-1 text-xs text-blue-600 hover:text-blue-700"
+              >
+                <MapPin className="w-3.5 h-3.5" />
+                Elegir en el mapa
+              </button>
+            </div>
+          </div>
+
           <button
             type="button"
-            onClick={() => openMapPicker("destination")}
-            className="text-sm text-blue-600 hover:text-blue-700 flex items-center gap-1"
-          >
-            <MapPin className="w-4 h-4" />
-            Elegir en el mapa
-          </button>
-
-          <Button
-            type="button"
-            variant="outline"
-            className="w-full border-blue-200 text-blue-700 hover:bg-blue-50"
             onClick={checkDestinationWeather}
             disabled={isWeatherLoading}
+            className="mt-4 w-full inline-flex items-center justify-center gap-2 rounded-xl border border-blue-200 bg-blue-50 hover:bg-blue-100 text-blue-700 px-4 py-2.5 text-sm transition-colors disabled:opacity-60"
           >
             {isWeatherLoading ? (
               <>
-                <LoaderCircle className="w-4 h-4 mr-2 animate-spin" />
+                <LoaderCircle className="w-4 h-4 animate-spin" />
                 Consultando clima...
               </>
             ) : (
               <>
-                <CloudSun className="w-4 h-4 mr-2" />
+                <CloudSun className="w-4 h-4" />
                 Ver posible clima del destino
               </>
             )}
-          </Button>
+          </button>
 
-          {(weatherError || weatherPreview) && (
-            <div className="rounded-lg border border-slate-200 bg-slate-50 p-3">
-              {weatherError && (
-                <div className="flex items-start gap-2 text-sm text-amber-700">
-                  <AlertCircle className="w-4 h-4 mt-0.5" />
-                  <span>{weatherError}</span>
-                </div>
-              )}
-
-              {weatherPreview && (
-                <div className="space-y-1.5 text-sm text-slate-700">
-                  <p className="text-slate-900">
-                    Clima estimado en <strong>{weatherLocationLabel ?? weatherPreview.city}</strong>
-                  </p>
-                  <p>
-                    {weatherPreview.condition} · {Math.round(weatherPreview.temperatureC)}°C
-                  </p>
-                  <p className="text-xs text-slate-500">
-                    Sensación {Math.round(weatherPreview.feelsLikeC)}° · Humedad {weatherPreview.humidity}%
-                    · Viento {Math.round(weatherPreview.windKph)} km/h
-                  </p>
-                  <p className="text-xs text-blue-700">
-                    Este aviso es informativo para planificar tu viaje, sin guardar todavía en base de datos.
-                  </p>
-                </div>
-              )}
+          {weatherError && (
+            <div className="mt-3 flex items-start gap-2 rounded-xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-800">
+              <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0" />
+              <span>{weatherError}</span>
             </div>
           )}
-        </div>
 
-        <div className="space-y-2 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
-          <Label htmlFor="travelDate" className="text-slate-900">
-            Fecha de viaje *
-          </Label>
-          <Input
-            id="travelDate"
-            type="date"
-            value={travelDate}
-            onChange={(e) => setTravelDate(e.target.value)}
-            className="bg-white border-slate-200 focus:border-blue-500"
-            required
-          />
-        </div>
+          {weatherPreview && (
+            <div className="mt-3 rounded-xl bg-gradient-to-br from-blue-600 to-blue-700 text-white p-4 shadow-sm">
+              <div className="flex items-start justify-between gap-3 mb-2">
+                <div className="min-w-0">
+                  <p className="text-[11px] uppercase tracking-wide text-blue-100">
+                    Clima estimado
+                  </p>
+                  <p className="text-base truncate">
+                    {weatherLocationLabel ?? weatherPreview.city}
+                  </p>
+                </div>
+                <p className="text-3xl font-light flex-shrink-0">
+                  {Math.round(weatherPreview.temperatureC)}°
+                </p>
+              </div>
+              <p className="text-sm text-blue-100">
+                {translateCondition(weatherPreview.condition)}
+              </p>
+              <div className="mt-3 pt-3 border-t border-white/15 grid grid-cols-3 gap-2 text-xs text-blue-100">
+                <div className="flex items-center gap-1.5">
+                  <Thermometer className="w-3.5 h-3.5" />
+                  <span>Sens. {Math.round(weatherPreview.feelsLikeC)}°</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Droplets className="w-3.5 h-3.5" />
+                  <span>{weatherPreview.humidity}%</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <Wind className="w-3.5 h-3.5" />
+                  <span>{Math.round(weatherPreview.windKph)} km/h</span>
+                </div>
+              </div>
+            </div>
+          )}
+        </section>
 
-        <div className="space-y-3 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
-          <Label className="text-slate-900">Medios de transporte *</Label>
-          <div className="grid grid-cols-2 gap-3">
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm">
+              2
+            </div>
+            <div>
+              <h2 className="text-slate-900">Fecha de viaje</h2>
+              <p className="text-xs text-slate-500">¿Cuándo planeas salir?</p>
+            </div>
+          </div>
+
+          <div className="relative">
+            <Calendar className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-blue-500 pointer-events-none" />
+            <Input
+              id="travelDate"
+              type="date"
+              value={travelDate}
+              onChange={(e) => setTravelDate(e.target.value)}
+              className="pl-10 h-11 bg-white border-slate-200 focus:border-blue-500"
+              required
+            />
+          </div>
+          {travelDate && (
+            <p className="mt-2 text-xs text-slate-500">
+              Salida programada para <strong>{formatTripDate(travelDate)}</strong>
+            </p>
+          )}
+        </section>
+
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center justify-between gap-3 mb-4">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 rounded-full bg-blue-600 text-white flex items-center justify-center text-sm">
+                3
+              </div>
+              <div>
+                <h2 className="text-slate-900">Medios de transporte</h2>
+                <p className="text-xs text-slate-500">Selecciona uno o varios</p>
+              </div>
+            </div>
+            <span className="inline-flex items-center text-xs text-slate-500 bg-slate-100 rounded-full px-2 py-0.5">
+              {selectedTransport.length} seleccionado
+              {selectedTransport.length === 1 ? "" : "s"}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 gap-2.5">
             {transportOptions.map(({ id, label, icon: Icon }) => {
               const isSelected = selectedTransport.includes(id);
               return (
@@ -821,27 +1270,48 @@ export function PlanTrip() {
                   key={id}
                   type="button"
                   onClick={() => toggleTransport(id)}
-                  className={`flex items-center gap-2 rounded-lg border p-3 text-left transition-all ${
+                  className={`relative flex flex-col items-center justify-center gap-2 rounded-xl border-2 p-4 transition-all ${
                     isSelected
-                      ? "border-blue-600 bg-blue-50 text-blue-700"
-                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300"
+                      ? "border-blue-600 bg-blue-50 text-blue-700 shadow-sm"
+                      : "border-slate-200 bg-white text-slate-600 hover:border-slate-300 hover:bg-slate-50"
                   }`}
                 >
-                  <Icon className="w-4 h-4" />
+                  {isSelected && (
+                    <span className="absolute top-2 right-2 w-5 h-5 rounded-full bg-blue-600 text-white flex items-center justify-center">
+                      <CheckCircle className="w-3.5 h-3.5" />
+                    </span>
+                  )}
+                  <div
+                    className={`w-10 h-10 rounded-full flex items-center justify-center ${
+                      isSelected ? "bg-blue-600 text-white" : "bg-slate-100 text-slate-500"
+                    }`}
+                  >
+                    <Icon className="w-5 h-5" />
+                  </div>
                   <span className="text-sm">{label}</span>
                 </button>
               );
             })}
           </div>
           {selectedTransport.length === 0 && (
-            <p className="text-xs text-red-600">Selecciona al menos un medio de transporte.</p>
+            <p className="mt-3 text-xs text-red-600 inline-flex items-center gap-1">
+              <AlertCircle className="w-3.5 h-3.5" />
+              Selecciona al menos un medio de transporte
+            </p>
           )}
-        </div>
+        </section>
 
-        <div className="space-y-2 bg-white border border-slate-100 rounded-xl p-4 shadow-sm">
-          <Label htmlFor="notes" className="text-slate-900">
-            Notas adicionales (Opcional)
-          </Label>
+        <section className="bg-white border border-slate-200 rounded-2xl p-5 shadow-sm">
+          <div className="flex items-center gap-3 mb-4">
+            <div className="w-8 h-8 rounded-full bg-slate-100 text-slate-500 flex items-center justify-center">
+              <StickyNote className="w-4 h-4" />
+            </div>
+            <div>
+              <h2 className="text-slate-900">Notas adicionales</h2>
+              <p className="text-xs text-slate-500">Opcional</p>
+            </div>
+          </div>
+
           <Textarea
             id="notes"
             placeholder="Ej: Evitar peajes, salir temprano, viajar con niños..."
@@ -849,16 +1319,83 @@ export function PlanTrip() {
             onChange={(e) => setNotes(e.target.value)}
             className="min-h-24 bg-white border-slate-200 focus:border-blue-500 resize-none"
           />
-        </div>
+        </section>
 
-        <Button
-          type="submit"
-          className="w-full h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl"
-          disabled={selectedTransport.length === 0}
-        >
-          Guardar viaje
-        </Button>
+        <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-5 py-3 shadow-[0_-4px_20px_rgba(0,0,0,0.04)]">
+          <div className="max-w-screen-md mx-auto flex items-center gap-3">
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => setView("list")}
+              disabled={isSavingTrip}
+              className="h-12 px-4 rounded-xl"
+            >
+              Cancelar
+            </Button>
+            <Button
+              type="submit"
+              className="flex-1 h-12 bg-blue-600 hover:bg-blue-700 text-white rounded-xl inline-flex items-center justify-center gap-2 disabled:opacity-90"
+              disabled={selectedTransport.length === 0 || isSavingTrip}
+            >
+              {isSavingTrip ? (
+                <>
+                  <LoaderCircle className="w-4 h-4 animate-spin" />
+                  Guardando viaje...
+                </>
+              ) : (
+                <>
+                  Guardar viaje
+                  <ArrowRight className="w-4 h-4" />
+                </>
+              )}
+            </Button>
+          </div>
+        </div>
       </form>
+
+      {isSavingTrip && (
+        <div className="fixed inset-0 z-50 bg-slate-950/40 backdrop-blur-sm flex items-center justify-center px-6">
+          <div className="bg-white rounded-2xl shadow-2xl w-full max-w-sm p-6">
+            <div className="flex flex-col items-center text-center">
+              <div className="relative w-16 h-16 mb-4">
+                <div className="absolute inset-0 rounded-full bg-blue-100 animate-ping opacity-75" />
+                <div className="relative w-16 h-16 rounded-full bg-gradient-to-br from-blue-600 to-blue-700 text-white flex items-center justify-center shadow-lg">
+                  <LoaderCircle className="w-7 h-7 animate-spin" />
+                </div>
+              </div>
+              <h3 className="text-slate-900 mb-1">Guardando tu viaje</h3>
+              <p className="text-sm text-slate-500 mb-4">
+                {savingStep || "Procesando información..."}
+              </p>
+              <div className="w-full space-y-2 text-left">
+                {[
+                  { label: "Localizando ubicaciones", match: /Localizando/ },
+                  { label: "Consultando clima", match: /clima/i },
+                  { label: "Analizando tráfico", match: /tráfico/i },
+                  { label: "Guardando viaje", match: /Guardando/ },
+                ].map((s) => {
+                  const active = s.match.test(savingStep);
+                  return (
+                    <div
+                      key={s.label}
+                      className={`flex items-center gap-2 text-xs ${
+                        active ? "text-blue-700" : "text-slate-400"
+                      }`}
+                    >
+                      {active ? (
+                        <LoaderCircle className="w-3.5 h-3.5 animate-spin flex-shrink-0" />
+                      ) : (
+                        <span className="w-3.5 h-3.5 rounded-full border-2 border-slate-200 flex-shrink-0" />
+                      )}
+                      <span>{s.label}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <MapLocationPickerDialog
         isOpen={isMapPickerOpen}
