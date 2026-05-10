@@ -7,6 +7,7 @@ import {
   type CurrentWeather,
   type HourlyForecast,
 } from "../services/weatherApi";
+import { getLocalNews, type LocalNewsItem } from "../services/localNewsApi";
 import { getDeviceLocality } from "../services/locationApi";
 import {
   Bell,
@@ -20,10 +21,11 @@ import {
   CheckCircle2,
   TrendingUp,
   LoaderCircle,
+  Newspaper,
 } from "lucide-react";
 
-type EventType = "deslave" | "trafico" | "clima";
-type EventSource = "verified" | "user";
+type EventType = "deslave" | "trafico" | "clima" | "noticia";
+type EventSource = "verified" | "user" | "news";
 
 interface Event {
   id: string;
@@ -35,6 +37,7 @@ interface Event {
   verified: boolean;
   votes: { up: number; down: number };
   description: string;
+  url?: string;
 }
 
 const mockEvents: Event[] = [
@@ -98,6 +101,9 @@ export function Home() {
   const [next24HoursLoading, setNext24HoursLoading] = useState(false);
   const [next24HoursError, setNext24HoursError] = useState<string | null>(null);
   const [next24Hours, setNext24Hours] = useState<HourlyForecast[]>([]);
+  const [localNews, setLocalNews] = useState<LocalNewsItem[]>([]);
+  const [localNewsLoading, setLocalNewsLoading] = useState(false);
+  const [localNewsError, setLocalNewsError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!navigator.geolocation) {
@@ -176,6 +182,59 @@ export function Home() {
       ? `${currentWeather.condition} - clima por coordenadas`
       : currentWeather?.condition;
 
+  useEffect(() => {
+    if (!displayLocality) {
+      return;
+    }
+
+    let ignore = false;
+    setLocalNewsLoading(true);
+    setLocalNewsError(null);
+
+    getLocalNews(displayLocality)
+      .then((news) => {
+        if (!ignore) {
+          setLocalNews(news);
+        }
+      })
+      .catch(() => {
+        if (!ignore) {
+          setLocalNewsError("No fue posible cargar noticias locales.");
+        }
+      })
+      .finally(() => {
+        if (!ignore) {
+          setLocalNewsLoading(false);
+        }
+      });
+
+    return () => {
+      ignore = true;
+    };
+  }, [displayLocality]);
+
+  const newsEvents: Event[] = localNews.map((news) => ({
+    id: news.id,
+    type: news.category === "traffic" ? "trafico" : "noticia",
+    title: news.title,
+    location: news.location,
+    time: news.timeAgo,
+    source: "news",
+    verified: true,
+    votes: { up: 0, down: 0 },
+    description:
+      news.summary ||
+      (news.category === "traffic"
+        ? "Noticia local con posible impacto vial."
+        : "Noticia local de seguridad."),
+    url: news.url,
+  }));
+
+  const allEvents = [...newsEvents, ...mockEvents];
+  const activeEventsCount = allEvents.length;
+  const areaEventsCount = newsEvents.length;
+  const verifiedEventsCount = allEvents.filter((event) => event.verified).length;
+
   const getEventIcon = (type: EventType) => {
     switch (type) {
       case "deslave":
@@ -184,6 +243,8 @@ export function Home() {
         return <Car className="w-5 h-5" />;
       case "clima":
         return <CloudRain className="w-5 h-5" />;
+      case "noticia":
+        return <Newspaper className="w-5 h-5" />;
     }
   };
 
@@ -195,13 +256,24 @@ export function Home() {
         return "bg-amber-500";
       case "clima":
         return "bg-blue-500";
+      case "noticia":
+        return "bg-violet-500";
     }
   };
 
   const filteredEvents =
     filter === "all"
-      ? mockEvents
-      : mockEvents.filter((event) => event.type === filter);
+      ? allEvents
+      : allEvents.filter((event) => event.type === filter);
+
+  const handleEventClick = (event: Event) => {
+    if (event.url) {
+      window.open(event.url, "_blank", "noopener,noreferrer");
+      return;
+    }
+
+    navigate(`/event/${event.id}`);
+  };
 
   const loadNext24HoursForecast = async () => {
     if (next24Hours.length > 0 || next24HoursLoading || !coords) return;
@@ -289,21 +361,21 @@ export function Home() {
           <div className="bg-slate-50 rounded-xl p-3 text-center border border-slate-100">
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <TrendingUp className="w-4 h-4 text-blue-600" />
-              <span className="text-2xl text-slate-900">12</span>
+              <span className="text-2xl text-slate-900">{activeEventsCount}</span>
             </div>
             <p className="text-xs text-slate-500">Activas hoy</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-3 text-center border border-slate-100">
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <MapPin className="w-4 h-4 text-blue-600" />
-              <span className="text-2xl text-slate-900">3</span>
+              <span className="text-2xl text-slate-900">{areaEventsCount}</span>
             </div>
             <p className="text-xs text-slate-500">En tu área</p>
           </div>
           <div className="bg-slate-50 rounded-xl p-3 text-center border border-slate-100">
             <div className="flex items-center justify-center gap-1.5 mb-1">
               <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span className="text-2xl text-slate-900">8</span>
+              <span className="text-2xl text-slate-900">{verifiedEventsCount}</span>
             </div>
             <p className="text-xs text-slate-500">Verificadas</p>
           </div>
@@ -344,6 +416,16 @@ export function Home() {
             Tráfico
           </button>
           <button
+            onClick={() => setFilter("noticia")}
+            className={`px-4 py-2 rounded-full whitespace-nowrap transition-all ${
+              filter === "noticia"
+                ? "bg-blue-600 text-white shadow-sm"
+                : "bg-white text-slate-600 border border-slate-200 hover:border-slate-300"
+            }`}
+          >
+            Noticias
+          </button>
+          <button
             onClick={() => setFilter("clima")}
             className={`px-4 py-2 rounded-full whitespace-nowrap transition-all ${
               filter === "clima"
@@ -358,10 +440,29 @@ export function Home() {
 
       {/* Events List - tarjetas neutras, el color solo vive en el icono del tipo */}
       <div className="px-4 space-y-3">
+        {localNewsLoading && (
+          <div className="flex items-center gap-2 rounded-xl border border-slate-100 bg-white p-4 text-sm text-slate-500">
+            <LoaderCircle className="w-4 h-4 animate-spin" />
+            <span>Analizando noticias locales...</span>
+          </div>
+        )}
+
+        {!localNewsLoading && localNewsError && (
+          <div className="rounded-xl border border-amber-100 bg-amber-50 p-4 text-sm text-amber-800">
+            {localNewsError}
+          </div>
+        )}
+
+        {!localNewsLoading && !localNewsError && displayLocality && localNews.length === 0 && (
+          <div className="rounded-xl border border-slate-100 bg-white p-4 text-sm text-slate-500">
+            Sin noticias en su localidad
+          </div>
+        )}
+
         {filteredEvents.map((event) => (
           <div
             key={event.id}
-            onClick={() => navigate(`/event/${event.id}`)}
+            onClick={() => handleEventClick(event)}
             className="bg-white rounded-xl shadow-sm p-4 border border-slate-100 hover:border-slate-200 hover:shadow-md transition-all cursor-pointer"
           >
             <div className="flex items-start gap-3">

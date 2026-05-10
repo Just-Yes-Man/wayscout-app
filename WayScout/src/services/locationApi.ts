@@ -6,6 +6,7 @@ interface NominatimAddress {
   city?: string;
   county?: string;
   state?: string;
+  country?: string;
 }
 
 interface NominatimResponse {
@@ -29,16 +30,19 @@ function pickLocality(address?: NominatimAddress): string | null {
   if (!address) return null;
 
   const locality =
-    address.neighbourhood ||
-    address.suburb ||
-    address.village ||
     address.town ||
-    address.city;
+    address.city ||
+    address.village ||
+    address.suburb ||
+    address.neighbourhood;
 
   if (!locality) return null;
 
-  const region = address.county || address.state;
-  return region ? `${locality}, ${region}` : locality;
+  const locationParts = [locality, address.county, address.state, address.country]
+    .filter((part): part is string => Boolean(part?.trim()))
+    .filter((part, index, parts) => parts.indexOf(part) === index);
+
+  return locationParts.join(", ");
 }
 
 export async function getDeviceLocality(

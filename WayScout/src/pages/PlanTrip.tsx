@@ -14,6 +14,7 @@ import {
   type Next24HoursWeather,
 } from "../services/weatherApi";
 import { getRouteTraffic, type TrafficRoute } from "../services/trafficApi";
+import { getLocalNews, type LocalNewsItem } from "../services/localNewsApi";
 import {
   CheckCircle,
   MapPin,
@@ -40,6 +41,8 @@ import {
   Wind,
   Droplets,
   Plane,
+  Newspaper,
+  ExternalLink,
 } from "lucide-react";
 
 type LatLng = [number, number];
@@ -58,6 +61,7 @@ type SavedTrip = {
   weatherWarnings: string[];
   trafficWarnings?: string[];
   trafficByTransport?: Record<string, TrafficRoute>;
+  localNews?: LocalNewsItem[];
   forecastSnapshot: Next24HoursWeather | null;
 };
 
@@ -475,6 +479,7 @@ export function PlanTrip() {
     let destinationCoordsForTraffic: LatLng | null = destinationCoordinates;
     let trafficByTransport: Record<string, TrafficRoute> = {};
     let trafficFallbackMessage: string | undefined;
+    let localNewsToSave: LocalNewsItem[] = [];
 
     if (destination.trim()) {
       try {
@@ -506,6 +511,24 @@ export function PlanTrip() {
         }
       } catch {
         // Mantén lo que tengamos disponible.
+      }
+    }
+
+    const localNewsLocation =
+      weatherLabelToSave ||
+      (weatherToSave
+        ? [weatherToSave.city, weatherToSave.region, weatherToSave.country]
+            .filter(Boolean)
+            .join(", ")
+        : destination.trim());
+
+    if (localNewsLocation) {
+      try {
+        setSavingStep("Analizando noticias locales...");
+        localNewsToSave = await getLocalNews(localNewsLocation, 3);
+      } catch {
+        // Si falla la consulta de noticias, mantenemos el guardado del viaje.
+        localNewsToSave = [];
       }
     }
 
@@ -576,6 +599,7 @@ export function PlanTrip() {
       weatherWarnings: buildWeatherWarnings(weatherToSave, forecastToSave),
       trafficWarnings: buildTrafficWarnings(trafficByTransport, selectedTransport, trafficFallbackMessage),
       trafficByTransport,
+      localNews: localNewsToSave,
       forecastSnapshot: forecastToSave,
     };
 
@@ -889,6 +913,47 @@ export function PlanTrip() {
                                 <Droplets className="w-3.5 h-3.5" />
                                 {trip.weather.humidity}%
                               </span>
+                            </div>
+                          </div>
+                        )}
+
+                        {(trip.localNews?.length ?? 0) > 0 && (
+                          <div className="mt-3 rounded-xl border border-violet-100 bg-violet-50/60 p-3">
+                            <div className="flex items-center gap-2 mb-2">
+                              <div className="bg-white text-violet-600 rounded-lg p-1.5 shadow-sm">
+                                <Newspaper className="w-4 h-4" />
+                              </div>
+                              <div>
+                                <p className="text-xs text-violet-700">Noticias locales</p>
+                                <p className="text-[11px] text-slate-500">
+                                  Cerca de {trip.weatherLocationLabel ?? trip.destination}
+                                </p>
+                              </div>
+                            </div>
+
+                            <div className="space-y-1.5">
+                              {trip.localNews!.slice(0, 3).map((news) => (
+                                <button
+                                  key={news.id}
+                                  type="button"
+                                  onClick={() =>
+                                    window.open(news.url, "_blank", "noopener,noreferrer")
+                                  }
+                                  className="w-full text-left rounded-lg border border-white/70 bg-white/80 px-2.5 py-2 hover:border-violet-200 hover:bg-white transition-colors"
+                                >
+                                  <div className="flex items-start justify-between gap-2">
+                                    <div className="min-w-0">
+                                      <p className="text-xs text-slate-800 line-clamp-2">
+                                        {news.title}
+                                      </p>
+                                      <p className="mt-0.5 text-[11px] text-slate-500">
+                                        {news.source} · {news.timeAgo}
+                                      </p>
+                                    </div>
+                                    <ExternalLink className="w-3.5 h-3.5 text-violet-500 flex-shrink-0 mt-0.5" />
+                                  </div>
+                                </button>
+                              ))}
                             </div>
                           </div>
                         )}
