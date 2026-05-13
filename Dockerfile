@@ -12,4 +12,4 @@ COPY --from=build /app/target/*SNAPSHOT.jar /app/app.jar
 ENV PORT=8080
 EXPOSE 8080
 
-CMD ["sh", "-c", "java -Dserver.port=${PORT} -jar /app/app.jar"]
+ENTRYPOINT ["sh", "-c", "exec java -Dserver.port=${PORT:-8080} -jar /app/app.jar"]
