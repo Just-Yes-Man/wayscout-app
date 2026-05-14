@@ -123,7 +123,7 @@ public class LocalNewsService {
             String searchableText = normalizeText(title + " " + summary);
             String category = classifyCategory(searchableText);
 
-            if (category == null || !isGeographicallyRelevant(searchableText, locationScope)) {
+            if (!isGeographicallyRelevant(searchableText, locationScope)) {
                 continue;
             }
 
@@ -201,7 +201,7 @@ public class LocalNewsService {
         if (containsAny(text, SECURITY_KEYWORDS)) {
             return "security";
         }
-        return null;
+        return "local";
     }
 
     private String classifyImpact(String text, String category) {
