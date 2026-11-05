@@ -5,6 +5,7 @@ import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -42,5 +43,10 @@ public class AuthController {
         } catch (FirebaseAuthException e) {
             throw new ResponseStatusException(HttpStatus.UNAUTHORIZED, "Token de inicio de sesion invalido.", e);
         }
+    }
+
+    @PostMapping("/login/attempt")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void registerLoginAttempt() {
     }
 }

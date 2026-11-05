@@ -23,6 +23,6 @@ public class WebConfig implements WebMvcConfigurer {
         registry.addInterceptor(firebaseAuthInterceptor)
                 .addPathPatterns("/api/reports/**");
         registry.addInterceptor(loginRateLimitInterceptor)
-            .addPathPatterns("/api/auth/login");
+            .addPathPatterns("/api/auth/login/attempt");
     }
 }
