@@ -8,14 +8,21 @@ import org.springframework.web.servlet.config.annotation.WebMvcConfigurer;
 public class WebConfig implements WebMvcConfigurer {
 
     private final FirebaseAuthInterceptor firebaseAuthInterceptor;
+    private final LoginRateLimitInterceptor loginRateLimitInterceptor;
 
-    public WebConfig(FirebaseAuthInterceptor firebaseAuthInterceptor) {
+    public WebConfig(
+            FirebaseAuthInterceptor firebaseAuthInterceptor,
+            LoginRateLimitInterceptor loginRateLimitInterceptor
+    ) {
         this.firebaseAuthInterceptor = firebaseAuthInterceptor;
+        this.loginRateLimitInterceptor = loginRateLimitInterceptor;
     }
 
     @Override
     public void addInterceptors(InterceptorRegistry registry) {
         registry.addInterceptor(firebaseAuthInterceptor)
                 .addPathPatterns("/api/reports/**");
+        registry.addInterceptor(loginRateLimitInterceptor)
+            .addPathPatterns("/api/auth/login");
     }
 }

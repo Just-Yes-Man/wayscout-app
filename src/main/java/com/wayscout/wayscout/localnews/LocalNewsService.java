@@ -23,13 +23,16 @@ import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 
 @Service
 public class LocalNewsService {
 
     private static final int MAX_LIMIT = 12;
+    private static final Duration CACHE_TTL = Duration.ofMinutes(10);
     private static final DateTimeFormatter RFC_1123 = DateTimeFormatter.RFC_1123_DATE_TIME;
     private static final Pattern TAG_PATTERN = Pattern.compile("<[^>]+>");
     private static final Pattern WHITESPACE_PATTERN = Pattern.compile("\\s+");
@@ -45,6 +48,7 @@ public class LocalNewsService {
             "incendio", "quema", "ataque", "desaparecido", "desaparecidos"
     );
     private final RestClient restClient;
+    private final Map<NewsCacheKey, CachedNews> cache = new ConcurrentHashMap<>();
 
     public LocalNewsService() {
         this.restClient = RestClient.builder()
@@ -59,6 +63,12 @@ public class LocalNewsService {
     public List<LocalNewsItemResponse> getRelevantLocalNews(String location, int limit) {
         String normalizedLocation = normalizeLocation(location);
         int normalizedLimit = Math.max(1, Math.min(limit, MAX_LIMIT));
+        NewsCacheKey cacheKey = new NewsCacheKey(normalizedLocation, normalizedLimit);
+        CachedNews cachedNews = cache.get(cacheKey);
+        if (cachedNews != null && cachedNews.cachedAt().plus(CACHE_TTL).isAfter(OffsetDateTime.now(ZoneOffset.UTC))) {
+            return cachedNews.items();
+        }
+
         LocationScope locationScope = buildLocationScope(normalizedLocation);
         String query = buildQuery(locationScope);
 
@@ -79,7 +89,11 @@ public class LocalNewsService {
                         "Google News devolvio una respuesta vacia.");
             }
 
-            return parseNews(responseBody, normalizedLocation, locationScope, normalizedLimit);
+            List<LocalNewsItemResponse> news = List.copyOf(
+                    parseNews(responseBody, normalizedLocation, locationScope, normalizedLimit)
+            );
+            cache.put(cacheKey, new CachedNews(news, OffsetDateTime.now(ZoneOffset.UTC)));
+            return news;
         } catch (HttpClientErrorException e) {
             throw new ResponseStatusException(HttpStatus.BAD_GATEWAY,
                     "Google News respondio con error.", e);
@@ -89,6 +103,12 @@ public class LocalNewsService {
             throw new ResponseStatusException(HttpStatus.SERVICE_UNAVAILABLE,
                     "Error al consultar noticias locales.", e);
         }
+    }
+
+    private record NewsCacheKey(String location, int limit) {
+    }
+
+    private record CachedNews(List<LocalNewsItemResponse> items, OffsetDateTime cachedAt) {
     }
 
     private String buildQuery(LocationScope locationScope) {
